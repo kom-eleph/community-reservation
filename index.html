@@ -13,10 +13,8 @@
   .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
   .card h2 { font-size: 14px; color: #888; margin-bottom: 12px; }
   .event-btn { display: block; width: 100%; padding: 14px; margin-bottom: 8px; border: 1.5px solid #06C755; border-radius: 8px; background: #fff; color: #06C755; font-size: 15px; font-weight: bold; cursor: pointer; text-align: left; }
-  .event-btn:active { background: #e8f5e9; }
   .event-btn .sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 2px; }
   .sched-btn { display: block; width: 100%; padding: 12px 14px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff; font-size: 14px; cursor: pointer; text-align: left; }
-  .sched-btn:active { background: #f0f0f0; }
   .sched-btn.full { color: #bbb; border-color: #eee; }
   .sched-btn .date { font-weight: bold; color: #333; }
   .sched-btn .info { font-size: 12px; color: #888; margin-top: 2px; }
@@ -32,13 +30,11 @@
 </style>
 </head>
 <body>
-
 <div class="header">コミュニティ予約</div>
 <div class="container">
   <div id="screen-loading" class="loading">読み込み中...</div>
   <div id="screen-error" class="error" style="display:none;"></div>
 
-  <!-- イベント選択 -->
   <div id="screen-event">
     <div class="card">
       <h2>イベントを選択してください</h2>
@@ -46,7 +42,6 @@
     </div>
   </div>
 
-  <!-- 日程選択 -->
   <div id="screen-sched">
     <div class="card">
       <h2 id="sched-title">日程を選択してください</h2>
@@ -55,17 +50,15 @@
     </div>
   </div>
 
-  <!-- 確認画面 -->
   <div id="screen-confirm">
     <div class="card">
       <h2>予約内容を確認してください</h2>
       <div class="confirm-box" id="confirm-detail"></div>
-      <button class="btn-green" onclick="submitReservation()">この内容で予約する</button>
+      <button class="btn-green" id="confirm-btn" onclick="submitReservation()">この内容で予約する</button>
       <button class="btn-gray" onclick="showScreen('sched')">戻る</button>
     </div>
   </div>
 
-  <!-- 完了画面 -->
   <div id="screen-done">
     <div class="card" style="text-align:center; padding:32px 16px;">
       <div style="font-size:48px; margin-bottom:16px;">✅</div>
@@ -77,15 +70,48 @@
 </div>
 
 <script>
-const LIFF_ID  = '2009742773-6qUiijpk';
-const GAS_URL  = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNUOUrIzVqoGKx4Rm7AmtTZMxz3XVpDR8DLlr8_qYfi8O36/exec';
+const LIFF_ID = '★LIFF_IDをここに貼る★';
+const GAS_URL = '★GASデプロイURLをここに貼る★';
 
 let userId   = '';
 let userName = '';
-let selectedEvent  = null;
-let selectedSched  = null;
+let selectedEvent = null;
+let selectedSched = null;
+let cbCount = 0;
 
-// ── 初期化 ────────────────────────────────────
+// ── JSONP呼び出し共通関数 ─────────────────────
+function jsonp(params) {
+  return new Promise((resolve, reject) => {
+    const cbName = '__cb' + (cbCount++);
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      reject(new Error('timeout'));
+    }, 15000);
+
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      const el = document.getElementById(cbName + '_script');
+      if (el) el.remove();
+      resolve(data);
+    };
+
+    params.callback = cbName;
+    const qs  = new URLSearchParams(params).toString();
+    const el  = document.createElement('script');
+    el.id     = cbName + '_script';
+    el.src    = GAS_URL + '?' + qs;
+    el.onerror = () => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      el.remove();
+      reject(new Error('script error'));
+    };
+    document.body.appendChild(el);
+  });
+}
+
+// ── 初期化 ───────────────────────────────────
 liff.init({ liffId: LIFF_ID }).then(async () => {
   if (!liff.isLoggedIn()) { liff.login(); return; }
   const profile = await liff.getProfile();
@@ -94,11 +120,10 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   loadEvents();
 }).catch(err => showError('初期化エラー: ' + err.message));
 
-// ── イベント一覧取得 ──────────────────────────
+// ── イベント一覧 ─────────────────────────────
 async function loadEvents() {
   try {
-    const res  = await fetch(`${GAS_URL}?action=getEvents`);
-    const data = await res.json();
+    const data = await jsonp({ action: 'getEvents' });
     if (!data.events || data.events.length === 0) {
       showError('現在受付中のイベントはありません。');
       return;
@@ -113,35 +138,38 @@ async function loadEvents() {
       list.appendChild(btn);
     });
     showScreen('event');
-  } catch(e) { showError('イベント取得に失敗しました'); }
+  } catch(e) { showError('イベント取得に失敗しました: ' + e.message); }
 }
 
-// ── 日程一覧取得 ──────────────────────────────
+// ── 日程一覧 ─────────────────────────────────
 async function loadSchedules(ev) {
   selectedEvent = ev;
   document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
   showScreen('loading');
   try {
-    const res  = await fetch(`${GAS_URL}?action=getSchedules&eventId=${ev.id}`);
-    const data = await res.json();
+    const data = await jsonp({ action: 'getSchedules', eventId: ev.id });
     const list = document.getElementById('sched-list');
     list.innerHTML = '';
-    data.schedules.forEach(s => {
-      const btn  = document.createElement('button');
-      const full = s.remaining <= 0;
-      btn.className = 'sched-btn' + (full ? ' full' : '');
-      btn.innerHTML = `
-        <span class="cap">${full ? '満席' : '残り' + s.remaining + '人'}</span>
-        <div class="date">${s.datetime}</div>
-        <div class="info">${s.location}</div>`;
-      if (!full) btn.onclick = () => showConfirm(s);
-      list.appendChild(btn);
-    });
+    if (!data.schedules || data.schedules.length === 0) {
+      list.innerHTML = '<p style="color:#888;font-size:13px;">受付中の日程がありません</p>';
+    } else {
+      data.schedules.forEach(s => {
+        const btn  = document.createElement('button');
+        const full = s.remaining <= 0;
+        btn.className = 'sched-btn' + (full ? ' full' : '');
+        btn.innerHTML = `
+          <span class="cap">${full ? '満席' : '残り' + s.remaining + '人'}</span>
+          <div class="date">${s.datetime}</div>
+          <div class="info">${s.location}</div>`;
+        if (!full) btn.onclick = () => showConfirm(s);
+        list.appendChild(btn);
+      });
+    }
     showScreen('sched');
-  } catch(e) { showError('日程取得に失敗しました'); }
+  } catch(e) { showError('日程取得に失敗しました: ' + e.message); }
 }
 
-// ── 確認画面 ──────────────────────────────────
+// ── 確認画面 ─────────────────────────────────
 function showConfirm(sched) {
   selectedSched = sched;
   document.getElementById('confirm-detail').innerHTML = `
@@ -152,29 +180,31 @@ function showConfirm(sched) {
   showScreen('confirm');
 }
 
-// ── 予約送信 ──────────────────────────────────
+// ── 予約送信 ─────────────────────────────────
 async function submitReservation() {
-  document.querySelector('#screen-confirm .btn-green').disabled = true;
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true;
+  btn.textContent = '処理中...';
   try {
-    const params = new URLSearchParams({
+    const data = await jsonp({
       action:  'reserve',
       userId:  userId,
       schedId: selectedSched.schedId,
       name:    userName,
     });
-    const res  = await fetch(`${GAS_URL}?${params.toString()}`);
-    const data = await res.json();
     if (data.status === 'ok') {
       document.getElementById('done-detail').textContent =
-        `予約ID: ${data.reservationId}`;
+        '予約ID: ' + data.reservationId;
       showScreen('done');
     } else {
       alert(data.message || '予約に失敗しました');
-      document.querySelector('#screen-confirm .btn-green').disabled = false;
+      btn.disabled = false;
+      btn.textContent = 'この内容で予約する';
     }
   } catch(e) {
-    alert('通信エラーが発生しました');
-    document.querySelector('#screen-confirm .btn-green').disabled = false;
+    alert('通信エラーが発生しました: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = 'この内容で予約する';
   }
 }
 
