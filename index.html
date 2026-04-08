@@ -234,7 +234,7 @@ async function submitReservation() {
 
 // ── ユーティリティ ────────────────────────────
 function showScreen(name) {
-  ['loading','error','event','sched','confirm','done'].forEach(s => {
+  ['loading','error','event','sched','confirm','done','myrsv','cancelled'].forEach(s => {
     document.getElementById('screen-' + s).style.display =
       s === name ? 'block' : 'none';
   });
@@ -243,6 +243,63 @@ function showError(msg) {
   document.getElementById('screen-error').textContent = msg;
   showScreen('error');
 }
+
+// ── 予約確認・取消 ────────────────────────────
+async function loadMyReservation() {
+  showScreen('loading');
+  try {
+    const data = await jsonp({ action: 'getMyReservation', userId });
+    const detail  = document.getElementById('myrsv-detail');
+    const actions = document.getElementById('myrsv-actions');
+
+    if (data.status === 'none') {
+      detail.innerHTML  = '<div class="status-none">現在予約はありません。</div>';
+      actions.innerHTML = '';
+    } else {
+      detail.innerHTML = `
+        <div class="my-rsv-box">
+          <div><span class="label">予約ID</span><br>${data.reservationId}</div>
+          <div><span class="label">イベント</span><br>${data.eventName}</div>
+          <div><span class="label">日時</span><br>${data.datetime}</div>
+          <div><span class="label">場所</span><br>${data.location}</div>
+        </div>`;
+      actions.innerHTML = `
+        <button class="btn-green" onclick="startChange()">日程を変更する</button>
+        <button class="btn-red" onclick="confirmCancel()">キャンセルする</button>`;
+    }
+    showScreen('myrsv');
+  } catch(e) { showError('予約情報の取得に失敗しました'); }
+}
+
+function confirmCancel() {
+  if (!confirm('予約をキャンセルしてよろしいですか？')) return;
+  doCancel();
+}
+
+async function doCancel() {
+  try {
+    const data = await jsonp({ action: 'cancel', userId });
+    if (data.status === 'ok') {
+      showScreen('cancelled');
+    } else {
+      alert(data.message || 'キャンセルに失敗しました');
+    }
+  } catch(e) { alert('通信エラーが発生しました'); }
+}
+
+// 変更は既存の予約をキャンセルして新規予約フローへ
+async function startChange() {
+  if (!confirm('現在の予約をキャンセルして新しい日程に変更しますか？')) return;
+  try {
+    const data = await jsonp({ action: 'cancel', userId });
+    if (data.status === 'ok') {
+      loadEvents(); // 新規予約フローへ
+    } else {
+      alert(data.message || 'キャンセルに失敗しました');
+    }
+  } catch(e) { alert('通信エラーが発生しました'); }
+} 
+ 
 </script>
 </body>
 </html>
