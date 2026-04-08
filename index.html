@@ -141,7 +141,17 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   const profile = await liff.getProfile();
   userId   = profile.userId;
   userName = profile.displayName;
-  loadEvents();
+  const profile = await liff.getProfile();
+  userId   = profile.userId;
+  userName = profile.displayName;
+
+  // URLパラメータでモードを切り替える
+  const mode = new URLSearchParams(location.search).get('mode');
+  if (mode === 'myrsv') {
+    loadMyReservation();
+  } else {
+    loadEvents();
+  }
 }).catch(err => showError('初期化エラー: ' + err.message));
 
 // ── イベント一覧 ─────────────────────────────
