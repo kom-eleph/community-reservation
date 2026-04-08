@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>コミュニティ予約</title>
+<title>イベント予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,49 +12,127 @@
   .container { padding: 16px; max-width: 480px; margin: 0 auto; }
   .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
   .card h2 { font-size: 14px; color: #888; margin-bottom: 12px; }
-  .event-btn { display: block; width: 100%; padding: 14px; margin-bottom: 8px; border: 1.5px solid #06C755; border-radius: 8px; background: #fff; color: #06C755; font-size: 15px; font-weight: bold; cursor: pointer; text-align: left; }
+
+  /* ローディング */
+  .loading-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0; }
+  .spinner { width: 36px; height: 36px; border: 3px solid #e0e0e0; border-top-color: #06C755; border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 13px; color: #888; }
+
+  .error-wrap { text-align: center; padding: 40px; color: #e53935; font-size: 14px; }
+
+  /* ボタン */
+  .event-btn { display: block; width: 100%; padding: 14px; margin-bottom: 8px; border: 1.5px solid #06C755; border-radius: 8px; background: #fff; color: #333; font-size: 15px; font-weight: bold; cursor: pointer; text-align: left; transition: background .15s; }
+  .event-btn:active { background: #e8f5e9; }
   .event-btn .sub { font-size: 12px; color: #888; font-weight: normal; margin-top: 2px; }
-  .sched-btn { display: block; width: 100%; padding: 12px 14px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff; font-size: 14px; cursor: pointer; text-align: left; }
-  .sched-btn.full { color: #bbb; border-color: #eee; }
+  .sched-btn { display: block; width: 100%; padding: 12px 14px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 8px; background: #fff; font-size: 14px; cursor: pointer; text-align: left; transition: background .15s; }
+  .sched-btn:active { background: #f5f5f5; }
+  .sched-btn.full { color: #bbb; border-color: #eee; cursor: default; }
   .sched-btn .date { font-weight: bold; color: #333; }
+  .sched-btn.full .date { color: #bbb; }
   .sched-btn .info { font-size: 12px; color: #888; margin-top: 2px; }
-  .sched-btn .cap { font-size: 12px; color: #06C755; float: right; }
+  .sched-btn .cap { font-size: 12px; color: #06C755; float: right; margin-top: 2px; }
   .sched-btn.full .cap { color: #bbb; }
-  .confirm-box { background: #f9f9f9; border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 14px; line-height: 2; }
-  .confirm-box .label { color: #888; font-size: 12px; }
-  .btn-green { display: block; width: 100%; padding: 14px; background: #06C755; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
-  .btn-gray { display: block; width: 100%; padding: 12px; background: #fff; color: #888; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
-  .loading { text-align: center; padding: 40px; color: #888; }
-  .error { text-align: center; padding: 40px; color: #e53935; }
-  #screen-event, #screen-sched, #screen-confirm, #screen-done { display: none; }
-  .my-rsv-box { background: #f9f9f9; border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 14px; line-height: 2; }
-  .my-rsv-box .label { color: #888; font-size: 12px; }
-  .btn-red { display: block; width: 100%; padding: 12px; background: #fff; color: #e53935; border: 1px solid #e53935; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
-  .status-none { text-align: center; padding: 24px; color: #888; font-size: 14px; }
+  .btn-green { display: block; width: 100%; padding: 14px; background: #06C755; color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: opacity .15s; }
+  .btn-green:disabled { opacity: .5; cursor: default; }
+  .btn-gray  { display: block; width: 100%; padding: 12px; background: #fff; color: #888; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+  .btn-red   { display: block; width: 100%; padding: 12px; background: #fff; color: #e53935; border: 1px solid #e53935; border-radius: 8px; font-size: 14px; cursor: pointer; margin-top: 8px; }
+
+  /* フォーム */
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 12px; color: #888; margin-bottom: 4px; display: block; }
+  .form-label span { color: #e53935; margin-left: 2px; }
+  .form-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; transition: border-color .15s; }
+  .form-input:focus { border-color: #06C755; }
+  .form-select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; background: #fff; outline: none; }
+
+  /* 確認・予約カード */
+  .confirm-box { background: #f9f9f9; border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 14px; }
+  .confirm-row { display: flex; padding: 6px 0; border-bottom: 0.5px solid #eee; }
+  .confirm-row:last-child { border-bottom: none; }
+  .confirm-label { color: #888; font-size: 12px; min-width: 80px; padding-top: 2px; }
+  .confirm-val { color: #333; font-weight: 500; flex: 1; }
+
+  /* 予約一覧カード */
+  .rsv-card { border: 1px solid #e8f5e9; border-radius: 10px; padding: 14px; margin-bottom: 12px; background: #fff; }
+  .rsv-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .rsv-id { font-size: 11px; color: #888; }
+  .rsv-status { font-size: 11px; color: #06C755; font-weight: bold; }
+  .rsv-event { font-size: 16px; font-weight: bold; color: #333; margin-bottom: 4px; }
+  .rsv-detail { font-size: 13px; color: #555; line-height: 1.7; }
+  .rsv-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .rsv-actions .btn-green { font-size: 13px; padding: 10px; }
+  .rsv-actions .btn-red   { font-size: 13px; padding: 10px; margin-top: 0; }
+
+  .status-none { text-align: center; padding: 32px; color: #888; font-size: 14px; }
+  .done-icon { font-size: 48px; margin-bottom: 16px; }
+  .done-title { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+  .done-sub { font-size: 14px; color: #888; margin-bottom: 24px; }
+
+  /* 各画面 */
+  .screen { display: none; }
 </style>
 </head>
 <body>
-<div class="header">コミュニティ予約</div>
+<div class="header">イベント予約</div>
 <div class="container">
-  <div id="screen-loading" class="loading">読み込み中...</div>
-  <div id="screen-error" class="error" style="display:none;"></div>
 
-  <div id="screen-event">
+  <div id="s-loading" class="screen">
+    <div class="loading-wrap">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loading-msg">読み込み中...</div>
+    </div>
+  </div>
+
+  <div id="s-error" class="screen">
+    <div class="error-wrap" id="error-msg"></div>
+  </div>
+
+  <!-- ユーザー情報登録 -->
+  <div id="s-profile" class="screen">
+    <div class="card">
+      <h2>はじめに情報を登録してください</h2>
+      <div class="form-group">
+        <label class="form-label">お名前<span>*</span></label>
+        <input class="form-input" id="inp-name" type="text" placeholder="例：山田 太郎" maxlength="30">
+      </div>
+      <div class="form-group">
+        <label class="form-label">年齢<span>*</span></label>
+        <input class="form-input" id="inp-age" type="number" placeholder="例：25" min="1" max="120">
+      </div>
+      <div class="form-group">
+        <label class="form-label">性別<span>*</span></label>
+        <select class="form-select" id="inp-gender">
+          <option value="">選択してください</option>
+          <option value="男性">男性</option>
+          <option value="女性">女性</option>
+          <option value="その他">その他</option>
+          <option value="未回答">未回答</option>
+        </select>
+      </div>
+      <button class="btn-green" id="profile-btn" onclick="submitProfile()">次へ</button>
+    </div>
+  </div>
+
+  <!-- イベント選択 -->
+  <div id="s-event" class="screen">
     <div class="card">
       <h2>イベントを選択してください</h2>
       <div id="event-list"></div>
     </div>
   </div>
 
-  <div id="screen-sched">
+  <!-- 日程選択 -->
+  <div id="s-sched" class="screen">
     <div class="card">
       <h2 id="sched-title">日程を選択してください</h2>
       <div id="sched-list"></div>
-      <button class="btn-gray" onclick="showScreen('event')">戻る</button>
+      <button class="btn-gray" id="sched-back-btn" onclick="showScreen('event')">戻る</button>
     </div>
   </div>
 
-  <div id="screen-confirm">
+  <!-- 予約確認 -->
+  <div id="s-confirm" class="screen">
     <div class="card">
       <h2>予約内容を確認してください</h2>
       <div class="confirm-box" id="confirm-detail"></div>
@@ -63,34 +141,35 @@
     </div>
   </div>
 
-  <div id="screen-done">
+  <!-- 予約完了 -->
+  <div id="s-done" class="screen">
     <div class="card" style="text-align:center; padding:32px 16px;">
-      <div style="font-size:48px; margin-bottom:16px;">✅</div>
-      <div style="font-size:18px; font-weight:bold; margin-bottom:8px;">予約が完了しました</div>
-      <div id="done-detail" style="font-size:14px; color:#888; margin-bottom:24px;"></div>
+      <div class="done-icon">✅</div>
+      <div class="done-title">予約が完了しました</div>
+      <div class="done-sub" id="done-detail"></div>
       <button class="btn-green" onclick="liff.closeWindow()">閉じる</button>
     </div>
   </div>
 
-  <!-- 予約確認・取消画面 -->
-  <div id="screen-myrsv" style="display:none;">
+  <!-- 予約一覧 -->
+  <div id="s-myrsv" class="screen">
     <div class="card">
-      <h2>予約確認</h2>
-      <div id="myrsv-detail"></div>
-      <div id="myrsv-actions"></div>
+      <h2>予約一覧</h2>
+      <div id="myrsv-list"></div>
       <button class="btn-gray" onclick="liff.closeWindow()">閉じる</button>
     </div>
   </div>
 
-  <!-- キャンセル完了画面 -->
-  <div id="screen-cancelled" style="display:none;">
+  <!-- キャンセル完了 -->
+  <div id="s-cancelled" class="screen">
     <div class="card" style="text-align:center; padding:32px 16px;">
-      <div style="font-size:48px; margin-bottom:16px;">🗑️</div>
-      <div style="font-size:18px; font-weight:bold; margin-bottom:8px;">キャンセルしました</div>
-      <button class="btn-green" onclick="liff.closeWindow()">閉じる</button>
+      <div class="done-icon">🗑️</div>
+      <div class="done-title">キャンセルしました</div>
+      <button class="btn-green" onclick="loadMyReservations()">予約一覧に戻る</button>
+      <button class="btn-gray" style="margin-top:8px;" onclick="liff.closeWindow()">閉じる</button>
     </div>
   </div>
- 
+
 </div>
 
 <script>
@@ -101,35 +180,32 @@ let userId   = '';
 let userName = '';
 let selectedEvent = null;
 let selectedSched = null;
+let changeFromEventId = null; // 変更元のイベントID
 let cbCount = 0;
 
-// ── JSONP呼び出し共通関数 ─────────────────────
+// ── JSONP ────────────────────────────────────
 function jsonp(params) {
   return new Promise((resolve, reject) => {
     const cbName = '__cb' + (cbCount++);
     const timeout = setTimeout(() => {
       delete window[cbName];
-      reject(new Error('timeout'));
-    }, 15000);
-
+      reject(new Error('タイムアウトしました'));
+    }, 20000);
     window[cbName] = (data) => {
       clearTimeout(timeout);
       delete window[cbName];
-      const el = document.getElementById(cbName + '_script');
-      if (el) el.remove();
+      document.getElementById(cbName + '_s')?.remove();
       resolve(data);
     };
-
     params.callback = cbName;
-    const qs  = new URLSearchParams(params).toString();
     const el  = document.createElement('script');
-    el.id     = cbName + '_script';
-    el.src    = GAS_URL + '?' + qs;
+    el.id     = cbName + '_s';
+    el.src    = GAS_URL + '?' + new URLSearchParams(params).toString();
     el.onerror = () => {
       clearTimeout(timeout);
       delete window[cbName];
       el.remove();
-      reject(new Error('script error'));
+      reject(new Error('通信エラー'));
     };
     document.body.appendChild(el);
   });
@@ -142,46 +218,111 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   userId   = prof.userId;
   userName = prof.displayName;
 
+  showScreen('loading');
+  setLoadingMsg('ユーザー情報を確認中...');
+
+  const userInfo = await jsonp({ action: 'getUserInfo', userId });
   const mode = new URLSearchParams(location.search).get('mode');
-  if (mode === 'myrsv') {
-    loadMyReservation();
+
+  if (userInfo.status === 'none') {
+    // 未登録 → プロフィール入力
+    document.getElementById('inp-name').value = userName;
+    showScreen('profile');
+  } else if (mode === 'myrsv') {
+    loadMyReservations();
   } else {
     loadEvents();
   }
 }).catch(err => showError('初期化エラー: ' + err.message));
 
+// ── プロフィール登録 ──────────────────────────
+async function submitProfile() {
+  const name   = document.getElementById('inp-name').value.trim();
+  const age    = document.getElementById('inp-age').value.trim();
+  const gender = document.getElementById('inp-gender').value;
+  if (!name)   { alert('お名前を入力してください'); return; }
+  if (!age)    { alert('年齢を入力してください'); return; }
+  if (!gender) { alert('性別を選択してください'); return; }
+
+  const btn = document.getElementById('profile-btn');
+  btn.disabled = true;
+  btn.textContent = '登録中...';
+
+  try {
+    const data = await jsonp({ action: 'registerUser', userId, name, age, gender });
+    if (data.status === 'ok') {
+      const mode = new URLSearchParams(location.search).get('mode');
+      if (mode === 'myrsv') {
+        loadMyReservations();
+      } else {
+        loadEvents();
+      }
+    } else {
+      alert('登録に失敗しました');
+      btn.disabled = false;
+      btn.textContent = '次へ';
+    }
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '次へ';
+  }
+}
+
 // ── イベント一覧 ─────────────────────────────
-async function loadEvents() {
+async function loadEvents(filterEventId) {
+  showScreen('loading');
+  setLoadingMsg('イベントを読み込み中...');
+  changeFromEventId = filterEventId || null;
   try {
     const data = await jsonp({ action: 'getEvents' });
-    if (!data.events || data.events.length === 0) {
+    let events = data.events || [];
+
+    // 変更時は同じイベントのみ表示
+    if (filterEventId) {
+      events = events.filter(e => e.id === filterEventId);
+    }
+
+    if (events.length === 0) {
       showError('現在受付中のイベントはありません。');
       return;
     }
     const list = document.getElementById('event-list');
     list.innerHTML = '';
-    data.events.forEach(ev => {
+    events.forEach(ev => {
       const btn = document.createElement('button');
       btn.className = 'event-btn';
       btn.innerHTML = `${ev.name}<div class="sub">${ev.description || ''}</div>`;
       btn.onclick = () => loadSchedules(ev);
       list.appendChild(btn);
     });
-    showScreen('event');
+    // 変更時でイベントが1つだけなら自動選択
+    if (filterEventId && events.length === 1) {
+      loadSchedules(events[0]);
+    } else {
+      showScreen('event');
+    }
   } catch(e) { showError('イベント取得に失敗しました: ' + e.message); }
 }
 
 // ── 日程一覧 ─────────────────────────────────
 async function loadSchedules(ev) {
   selectedEvent = ev;
-  document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
   showScreen('loading');
+  setLoadingMsg('日程を読み込み中...');
   try {
     const data = await jsonp({ action: 'getSchedules', eventId: ev.id });
+    document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
+    // 変更時は戻るボタンを同イベント一覧に
+    document.getElementById('sched-back-btn').onclick =
+      changeFromEventId
+        ? () => loadEvents(changeFromEventId)
+        : () => showScreen('event');
+
     const list = document.getElementById('sched-list');
     list.innerHTML = '';
     if (!data.schedules || data.schedules.length === 0) {
-      list.innerHTML = '<p style="color:#888;font-size:13px;">受付中の日程がありません</p>';
+      list.innerHTML = '<p style="color:#888;font-size:13px;padding:8px 0;">受付中の日程がありません</p>';
     } else {
       data.schedules.forEach(s => {
         const btn  = document.createElement('button');
@@ -200,13 +341,21 @@ async function loadSchedules(ev) {
 }
 
 // ── 確認画面 ─────────────────────────────────
-function showConfirm(sched) {
+async function showConfirm(sched) {
   selectedSched = sched;
+  showScreen('loading');
+  setLoadingMsg('情報を確認中...');
+  const userInfo = await jsonp({ action: 'getUserInfo', userId }).catch(() => ({ status: 'none' }));
   document.getElementById('confirm-detail').innerHTML = `
-    <div><span class="label">お名前</span><br>${userName}</div>
-    <div><span class="label">イベント</span><br>${selectedEvent.name}</div>
-    <div><span class="label">日時</span><br>${sched.datetime}</div>
-    <div><span class="label">場所</span><br>${sched.location}</div>`;
+    <div class="confirm-row"><div class="confirm-label">お名前</div><div class="confirm-val">${userInfo.name || userName}</div></div>
+    <div class="confirm-row"><div class="confirm-label">年齢</div><div class="confirm-val">${userInfo.age || '-'}</div></div>
+    <div class="confirm-row"><div class="confirm-label">性別</div><div class="confirm-val">${userInfo.gender || '-'}</div></div>
+    <div class="confirm-row"><div class="confirm-label">イベント</div><div class="confirm-val">${selectedEvent.name}</div></div>
+    <div class="confirm-row"><div class="confirm-label">日時</div><div class="confirm-val">${sched.datetime}</div></div>
+    <div class="confirm-row"><div class="confirm-label">場所</div><div class="confirm-val">${sched.location}</div></div>`;
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = false;
+  btn.textContent = 'この内容で予約する';
   showScreen('confirm');
 }
 
@@ -214,17 +363,16 @@ function showConfirm(sched) {
 async function submitReservation() {
   const btn = document.getElementById('confirm-btn');
   btn.disabled = true;
-  btn.textContent = '処理中...';
+  btn.textContent = '予約中...';
   try {
     const data = await jsonp({
       action:  'reserve',
-      userId:  userId,
+      userId,
       schedId: selectedSched.schedId,
       name:    userName,
     });
     if (data.status === 'ok') {
-      document.getElementById('done-detail').textContent =
-        '予約ID: ' + data.reservationId;
+      document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
       showScreen('done');
     } else {
       alert(data.message || '予約に失敗しました');
@@ -232,80 +380,110 @@ async function submitReservation() {
       btn.textContent = 'この内容で予約する';
     }
   } catch(e) {
-    alert('通信エラーが発生しました: ' + e.message);
+    alert('通信エラー: ' + e.message);
     btn.disabled = false;
     btn.textContent = 'この内容で予約する';
   }
 }
 
-// ── ユーティリティ ────────────────────────────
-function showScreen(name) {
-  ['loading','error','event','sched','confirm','done','myrsv','cancelled'].forEach(s => {
-    document.getElementById('screen-' + s).style.display =
-      s === name ? 'block' : 'none';
-  });
-}
-function showError(msg) {
-  document.getElementById('screen-error').textContent = msg;
-  showScreen('error');
-}
-
-// ── 予約確認・取消 ────────────────────────────
-async function loadMyReservation() {
+// ── 予約一覧 ─────────────────────────────────
+async function loadMyReservations() {
   showScreen('loading');
+  setLoadingMsg('予約を読み込み中...');
   try {
-    const data = await jsonp({ action: 'getMyReservation', userId });
-    const detail  = document.getElementById('myrsv-detail');
-    const actions = document.getElementById('myrsv-actions');
+    const data = await jsonp({ action: 'getMyReservations', userId });
+    const list = document.getElementById('myrsv-list');
 
-    if (data.status === 'none') {
-      detail.innerHTML  = '<div class="status-none">現在予約はありません。</div>';
-      actions.innerHTML = '';
+    if (data.status === 'none' || !data.reservations.length) {
+      list.innerHTML = '<div class="status-none">現在予約はありません。</div>';
     } else {
-      detail.innerHTML = `
-        <div class="my-rsv-box">
-          <div><span class="label">予約ID</span><br>${data.reservationId}</div>
-          <div><span class="label">イベント</span><br>${data.eventName}</div>
-          <div><span class="label">日時</span><br>${data.datetime}</div>
-          <div><span class="label">場所</span><br>${data.location}</div>
-        </div>`;
-      actions.innerHTML = `
-        <button class="btn-green" onclick="startChange()">日程を変更する</button>
-        <button class="btn-red" onclick="confirmCancel()">キャンセルする</button>`;
+      list.innerHTML = data.reservations.map(r => `
+        <div class="rsv-card">
+          <div class="rsv-card-head">
+            <div class="rsv-id">${r.reservationId}</div>
+            <div class="rsv-status">予約中</div>
+          </div>
+          <div class="rsv-event">${r.eventName}</div>
+          <div class="rsv-detail">
+            📅 ${r.datetime}<br>
+            📍 ${r.location}
+          </div>
+          <div class="rsv-actions">
+            <button class="btn-green"
+              onclick="startChange('${r.reservationId}','${r.eventId}')">日程変更</button>
+            <button class="btn-red"
+              onclick="confirmCancel('${r.reservationId}')">キャンセル</button>
+          </div>
+        </div>
+      `).join('');
     }
     showScreen('myrsv');
   } catch(e) { showError('予約情報の取得に失敗しました'); }
 }
 
-function confirmCancel() {
-  if (!confirm('予約をキャンセルしてよろしいですか？')) return;
-  doCancel();
+// ── キャンセル ───────────────────────────────
+function confirmCancel(reservationId) {
+  if (!confirm('この予約をキャンセルしてよろしいですか？')) return;
+  doCancel(reservationId);
 }
 
-async function doCancel() {
+async function doCancel(reservationId) {
+  showScreen('loading');
+  setLoadingMsg('キャンセル処理中...');
   try {
-    const data = await jsonp({ action: 'cancel', userId });
+    const data = await jsonp({ action: 'cancel', userId, reservationId });
     if (data.status === 'ok') {
       showScreen('cancelled');
     } else {
       alert(data.message || 'キャンセルに失敗しました');
+      loadMyReservations();
     }
-  } catch(e) { alert('通信エラーが発生しました'); }
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+    loadMyReservations();
+  }
 }
 
-// 変更は既存の予約をキャンセルして新規予約フローへ
-async function startChange() {
-  if (!confirm('現在の予約をキャンセルして新しい日程に変更しますか？')) return;
+// ── 変更（同イベントのみ）────────────────────
+function startChange(reservationId, eventId) {
+  if (!confirm('現在の予約をキャンセルして同じイベントの別日程に変更しますか？')) return;
+  doChangeCancel(reservationId, eventId);
+}
+
+async function doChangeCancel(reservationId, eventId) {
+  showScreen('loading');
+  setLoadingMsg('変更処理中...');
   try {
-    const data = await jsonp({ action: 'cancel', userId });
+    const data = await jsonp({ action: 'cancel', userId, reservationId });
     if (data.status === 'ok') {
-      loadEvents(); // 新規予約フローへ
+      // 同じイベントの日程選択へ
+      loadEvents(eventId);
     } else {
       alert(data.message || 'キャンセルに失敗しました');
+      loadMyReservations();
     }
-  } catch(e) { alert('通信エラーが発生しました'); }
-} 
- 
+  } catch(e) {
+    alert('通信エラー: ' + e.message);
+    loadMyReservations();
+  }
+}
+
+// ── ユーティリティ ────────────────────────────
+function showScreen(name) {
+  const screens = ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled'];
+  screens.forEach(s => {
+    const el = document.getElementById('s-' + s);
+    if (el) el.style.display = s === name ? 'block' : 'none';
+  });
+}
+function setLoadingMsg(msg) {
+  const el = document.getElementById('loading-msg');
+  if (el) el.textContent = msg;
+}
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('error');
+}
 </script>
 </body>
 </html>
