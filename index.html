@@ -156,16 +156,13 @@ function showConfirm(sched) {
 async function submitReservation() {
   document.querySelector('#screen-confirm .btn-green').disabled = true;
   try {
-    const res  = await fetch(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action:  'reserve',
-        userId:  userId,
-        schedId: selectedSched.schedId,
-        name:    userName,
-      })
+    const params = new URLSearchParams({
+      action:  'reserve',
+      userId:  userId,
+      schedId: selectedSched.schedId,
+      name:    userName,
     });
+    const res  = await fetch(`${GAS_URL}?${params.toString()}`);
     const data = await res.json();
     if (data.status === 'ok') {
       document.getElementById('done-detail').textContent =
