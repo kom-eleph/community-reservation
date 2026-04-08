@@ -71,6 +71,26 @@
       <button class="btn-green" onclick="liff.closeWindow()">閉じる</button>
     </div>
   </div>
+
+  <!-- 予約確認・取消画面 -->
+  <div id="screen-myrsv" style="display:none;">
+    <div class="card">
+      <h2>予約確認</h2>
+      <div id="myrsv-detail"></div>
+      <div id="myrsv-actions"></div>
+      <button class="btn-gray" onclick="liff.closeWindow()">閉じる</button>
+    </div>
+  </div>
+
+  <!-- キャンセル完了画面 -->
+  <div id="screen-cancelled" style="display:none;">
+    <div class="card" style="text-align:center; padding:32px 16px;">
+      <div style="font-size:48px; margin-bottom:16px;">🗑️</div>
+      <div style="font-size:18px; font-weight:bold; margin-bottom:8px;">キャンセルしました</div>
+      <button class="btn-green" onclick="liff.closeWindow()">閉じる</button>
+    </div>
+  </div>
+ 
 </div>
 
 <script>
