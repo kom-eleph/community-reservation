@@ -269,16 +269,15 @@ async function submitProfile() {
   }
 }
 
-// ── イベント一覧 ─────────────────────────────
+// ── イベント一覧 ──────────────────────────────
 async function loadEvents(filterEventId) {
   showScreen('loading');
   setLoadingMsg('イベントを読み込み中...');
   changeFromEventId = filterEventId || null;
   try {
-    const data = await jsonp({ action: 'getEvents' });
+    const data = await jsonp({ action: 'getEvents', userId });
     let events = data.events || [];
 
-    // 変更時は同じイベントのみ表示
     if (filterEventId) {
       events = events.filter(e => e.id === filterEventId);
     }
@@ -291,19 +290,27 @@ async function loadEvents(filterEventId) {
     list.innerHTML = '';
     events.forEach(ev => {
       const btn = document.createElement('button');
-      btn.className = 'event-btn';
-      btn.innerHTML = `${ev.name}<div class="sub">${ev.description || ''}</div>`;
-      btn.onclick = () => loadSchedules(ev);
+      if (ev.alreadyBooked) {
+        btn.className = 'event-btn';
+        btn.disabled  = true;
+        btn.style.cssText = 'opacity:.45; cursor:default; border-color:#ddd; color:#aaa;';
+        btn.innerHTML = `${ev.name}
+          <div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
+      } else {
+        btn.className = 'event-btn';
+        btn.innerHTML = `${ev.name}<div class="sub">${ev.description || ''}</div>`;
+        btn.onclick = () => loadSchedules(ev);
+      }
       list.appendChild(btn);
     });
-    // 変更時でイベントが1つだけなら自動選択
-    if (filterEventId && events.length === 1) {
+
+    if (filterEventId && events.length === 1 && !events[0].alreadyBooked) {
       loadSchedules(events[0]);
     } else {
       showScreen('event');
     }
   } catch(e) { showError('イベント取得に失敗しました: ' + e.message); }
-}
+} 
 
 // ── 日程一覧 ─────────────────────────────────
 async function loadSchedules(ev) {
@@ -311,9 +318,8 @@ async function loadSchedules(ev) {
   showScreen('loading');
   setLoadingMsg('日程を読み込み中...');
   try {
-    const data = await jsonp({ action: 'getSchedules', eventId: ev.id });
+    const data = await jsonp({ action: 'getSchedules', eventId: ev.id, userId });
     document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
-    // 変更時は戻るボタンを同イベント一覧に
     document.getElementById('sched-back-btn').onclick =
       changeFromEventId
         ? () => loadEvents(changeFromEventId)
@@ -327,12 +333,28 @@ async function loadSchedules(ev) {
       data.schedules.forEach(s => {
         const btn  = document.createElement('button');
         const full = s.remaining <= 0;
-        btn.className = 'sched-btn' + (full ? ' full' : '');
-        btn.innerHTML = `
-          <span class="cap">${full ? '満席' : '残り' + s.remaining + '人'}</span>
-          <div class="date">${s.datetime}</div>
-          <div class="info">${s.location}</div>`;
-        if (!full) btn.onclick = () => showConfirm(s);
+
+        if (s.alreadyBooked) {
+          btn.className = 'sched-btn full';
+          btn.style.cssText = 'opacity:.45; cursor:default;';
+          btn.innerHTML = `
+            <span class="cap" style="color:#aaa;">申込済み</span>
+            <div class="date" style="color:#aaa;">${s.datetime}</div>
+            <div class="info">${s.location}</div>`;
+        } else if (full) {
+          btn.className = 'sched-btn full';
+          btn.innerHTML = `
+            <span class="cap">満席</span>
+            <div class="date">${s.datetime}</div>
+            <div class="info">${s.location}</div>`;
+        } else {
+          btn.className = 'sched-btn';
+          btn.innerHTML = `
+            <span class="cap">残り${s.remaining}人</span>
+            <div class="date">${s.datetime}</div>
+            <div class="info">${s.location}</div>`;
+          btn.onclick = () => showConfirm(s);
+        }
         list.appendChild(btn);
       });
     }
