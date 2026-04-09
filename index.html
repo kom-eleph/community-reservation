@@ -500,24 +500,6 @@ function startChange(reservationId, eventId) {
   loadEvents(eventId);
 }
 
-async function doChangeCancel(reservationId, eventId) {
-  showScreen('loading');
-  setLoadingMsg('変更処理中...');
-  try {
-    const data = await jsonp({ action: 'cancel', userId, reservationId });
-    if (data.status === 'ok') {
-      // 同じイベントの日程選択へ
-      loadEvents(eventId);
-    } else {
-      alert(data.message || 'キャンセルに失敗しました');
-      loadMyReservations();
-    }
-  } catch(e) {
-    alert('通信エラー: ' + e.message);
-    loadMyReservations();
-  }
-}
-
 // ── ユーティリティ ────────────────────────────
 function showScreen(name) {
   const screens = ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled'];
