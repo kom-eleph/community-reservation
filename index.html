@@ -297,48 +297,7 @@ async function submitProfile() {
   }
 }
 
-// ── イベント一覧 ──────────────────────────────
-async function loadEvents(filterEventId) {
-  showScreen('loading');
-  setLoadingMsg('イベントを読み込み中...');
-  changeFromEventId = filterEventId || null;
-  try {
-    const data = await jsonp({ action: 'getEvents', userId });
-    let events = data.events || [];
-
-    if (filterEventId) {
-      events = events.filter(e => e.id === filterEventId);
-    }
-
-    if (events.length === 0) {
-      showError('現在受付中のイベントはありません。');
-      return;
-    }
-    const list = document.getElementById('event-list');
-    list.innerHTML = '';
-    events.forEach(ev => {
-      const btn = document.createElement('button');
-      if (ev.alreadyBooked) {
-        btn.className = 'event-btn';
-        btn.disabled  = true;
-        btn.style.cssText = 'opacity:.45; cursor:default; border-color:#ddd; color:#aaa;';
-        btn.innerHTML = `${ev.name}
-          <div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
-      } else {
-        btn.className = 'event-btn';
-        btn.innerHTML = `${ev.name}<div class="sub">${ev.description || ''}</div>`;
-        btn.onclick = () => loadSchedules(ev);
-      }
-      list.appendChild(btn);
-    });
-
-    if (filterEventId && events.length === 1 && !events[0].alreadyBooked) {
-      loadSchedules(events[0]);
-    } else {
-      showScreen('event');
-    }
-  } catch(e) { showError('イベント取得に失敗しました: ' + e.message); }
-} 
+ 
 
 // ── 日程一覧 ─────────────────────────────────
 async function loadSchedules(ev) {
@@ -460,39 +419,86 @@ async function submitReservation() {
   }
 }
 
-// ── 予約一覧 ─────────────────────────────────
+// ── イベント一覧（データ取得 + 描画）────────────
+async function loadEvents(filterEventId) {
+  showScreen('loading');
+  setLoadingMsg('イベントを読み込み中...');
+  changeFromEventId = filterEventId || null;
+  try {
+    const data = await jsonp({ action: 'getEvents', userId });
+    renderEvents(data.events || [], filterEventId);
+  } catch(e) { showError('イベント取得に失敗しました: ' + e.message); }
+}
+
+function renderEvents(events, filterEventId) {
+  changeFromEventId = filterEventId || null;
+  if (filterEventId) {
+    events = events.filter(e => e.id === filterEventId);
+  }
+  if (events.length === 0) {
+    showError('現在受付中のイベントはありません。');
+    return;
+  }
+  const list = document.getElementById('event-list');
+  list.innerHTML = '';
+  events.forEach(ev => {
+    const btn = document.createElement('button');
+    if (ev.alreadyBooked) {
+      btn.className = 'event-btn';
+      btn.disabled  = true;
+      btn.style.cssText = 'opacity:.45; cursor:default; border-color:#ddd; color:#aaa;';
+      btn.innerHTML = `${ev.name}
+        <div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
+    } else {
+      btn.className = 'event-btn';
+      btn.innerHTML = `${ev.name}<div class="sub">${ev.description || ''}</div>`;
+      btn.onclick = () => loadSchedules(ev);
+    }
+    list.appendChild(btn);
+  });
+  if (filterEventId && events.length === 1 && !events[0].alreadyBooked) {
+    loadSchedules(events[0]);
+  } else {
+    showScreen('event');
+  }
+}
+
+// ── 予約一覧（データ取得 + 描画）────────────────
 async function loadMyReservations() {
   showScreen('loading');
   setLoadingMsg('予約を読み込み中...');
   try {
     const data = await jsonp({ action: 'getMyReservations', userId });
-    const list = document.getElementById('myrsv-list');
-
-    if (data.status === 'none' || !data.reservations.length) {
-      list.innerHTML = '<div class="status-none">現在予約はありません。</div>';
-    } else {
-      list.innerHTML = data.reservations.map(r => `
-        <div class="rsv-card">
-          <div class="rsv-card-head">
-            <div class="rsv-id">${r.reservationId}</div>
-            <div class="rsv-status">予約中</div>
-          </div>
-          <div class="rsv-event">${r.eventName}</div>
-          <div class="rsv-detail">
-            📅 ${r.datetime}<br>
-            📍 ${r.location}
-          </div>
-          <div class="rsv-actions">
-            <button class="btn-green"
-              onclick="startChange('${r.reservationId}','${r.eventId}')">日程変更</button>
-            <button class="btn-red"
-              onclick="confirmCancel('${r.reservationId}')">キャンセル</button>
-          </div>
-        </div>
-      `).join('');
-    }
-    showScreen('myrsv');
+    renderMyReservations(data.reservations || []);
   } catch(e) { showError('予約情報の取得に失敗しました'); }
+}
+
+function renderMyReservations(reservations) {
+  const list = document.getElementById('myrsv-list');
+  if (!reservations.length) {
+    list.innerHTML = '<div class="status-none">現在予約はありません。</div>';
+  } else {
+    list.innerHTML = reservations.map(r => `
+      <div class="rsv-card">
+        <div class="rsv-card-head">
+          <div class="rsv-id">${r.reservationId}</div>
+          <div class="rsv-status">予約中</div>
+        </div>
+        <div class="rsv-event">${r.eventName}</div>
+        <div class="rsv-detail">
+          📅 ${r.datetime}<br>
+          📍 ${r.location}
+        </div>
+        <div class="rsv-actions">
+          <button class="btn-green"
+            onclick="startChange('${r.reservationId}','${r.eventId}')">日程変更</button>
+          <button class="btn-red"
+            onclick="confirmCancel('${r.reservationId}')">キャンセル</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  showScreen('myrsv');
 }
 
 // ── キャンセル ───────────────────────────────
