@@ -376,12 +376,10 @@ async function showConfirm(sched) {
     <div class="confirm-row"><div class="confirm-label">イベント</div><div class="confirm-val">${selectedEvent.name}</div></div>
     <div class="confirm-row"><div class="confirm-label">日時</div><div class="confirm-val">${sched.datetime}</div></div>
     <div class="confirm-row"><div class="confirm-label">場所</div><div class="confirm-val">${sched.location}</div></div>`;
-  const btn = document.getElementById('confirm-btn');
-  btn.disabled = false;
-  btn.textContent = 'この内容で予約する';
-  const btn = document.getElementById('confirm-btn');
-  btn.disabled = false;
-  btn.textContent = changingReservationId ? '変更を確定する' : 'この内容で予約する'; 
+
+  const confirmBtn = document.getElementById('confirm-btn');
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = changingReservationId ? '変更を確定する' : 'この内容で予約する';
   showScreen('confirm');
 }
 
