@@ -182,6 +182,7 @@ let selectedEvent = null;
 let selectedSched = null;
 let changeFromEventId = null; // 変更元のイベントID
 let cbCount = 0;
+let changingReservationId = null; // 変更中の旧予約ID
 
 // ── JSONP ────────────────────────────────────
 function jsonp(params) {
@@ -378,6 +379,9 @@ async function showConfirm(sched) {
   const btn = document.getElementById('confirm-btn');
   btn.disabled = false;
   btn.textContent = 'この内容で予約する';
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = false;
+  btn.textContent = changingReservationId ? '変更を確定する' : 'この内容で予約する'; 
   showScreen('confirm');
 }
 
@@ -385,26 +389,49 @@ async function showConfirm(sched) {
 async function submitReservation() {
   const btn = document.getElementById('confirm-btn');
   btn.disabled = true;
-  btn.textContent = '予約中...';
+  btn.textContent = '処理中...';
+
   try {
-    const data = await jsonp({
-      action:  'reserve',
-      userId,
-      schedId: selectedSched.schedId,
-      name:    userName,
-    });
+    let data;
+    if (changingReservationId) {
+      // 変更処理：新予約登録 + 旧予約キャンセルを一括
+      data = await jsonp({
+        action:            'change',
+        userId,
+        oldReservationId:  changingReservationId,
+        newSchedId:        selectedSched.schedId,
+        name:              userName,
+      });
+    } else {
+      // 通常予約
+      data = await jsonp({
+        action:  'reserve',
+        userId,
+        schedId: selectedSched.schedId,
+        name:    userName,
+      });
+    }
+
     if (data.status === 'ok') {
-      document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
+      const label = changingReservationId ? '変更完了' : '予約完了';
+      document.getElementById('done-detail').textContent =
+        '予約ID: ' + data.reservationId;
+      // 完了画面のタイトルも変更
+      document.querySelector('#s-done .done-title').textContent =
+        changingReservationId ? '変更が完了しました' : '予約が完了しました';
+      document.querySelector('#s-done .done-icon').textContent =
+        changingReservationId ? '🔄' : '✅';
+      changingReservationId = null;
       showScreen('done');
     } else {
-      alert(data.message || '予約に失敗しました');
+      alert(data.message || '処理に失敗しました');
       btn.disabled = false;
-      btn.textContent = 'この内容で予約する';
+      btn.textContent = changingReservationId ? '変更を確定する' : 'この内容で予約する';
     }
   } catch(e) {
     alert('通信エラー: ' + e.message);
     btn.disabled = false;
-    btn.textContent = 'この内容で予約する';
+    btn.textContent = changingReservationId ? '変更を確定する' : 'この内容で予約する';
   }
 }
 
@@ -468,8 +495,9 @@ async function doCancel(reservationId) {
 
 // ── 変更（同イベントのみ）────────────────────
 function startChange(reservationId, eventId) {
-  if (!confirm('現在の予約をキャンセルして同じイベントの別日程に変更しますか？')) return;
-  doChangeCancel(reservationId, eventId);
+  // キャンセルはせず変更元IDを保持して日程選択へ
+  changingReservationId = reservationId;
+  loadEvents(eventId);
 }
 
 async function doChangeCancel(reservationId, eventId) {
