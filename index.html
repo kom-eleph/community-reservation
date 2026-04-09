@@ -176,6 +176,12 @@
 </div>
 
 <script>
+// ページ読み込み時に必ずローディング画面を表示する
+document.addEventListener('DOMContentLoaded', () => {
+  showScreen('loading');
+  setLoadingMsg('起動中...');
+});
+ 
 const LIFF_ID = '2009742773-6qUiijpk';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNUOUrIzVqoGKx4Rm7AmtTZMxz3XVpDR8DLlr8_qYfi8O36/exec';
 
@@ -202,6 +208,7 @@ function jsonp(params) {
       resolve(data);
     };
     params.callback = cbName;
+    params._t = Date.now(); // キャッシュ防止
     const el  = document.createElement('script');
     el.id     = cbName + '_s';
     el.src    = GAS_URL + '?' + new URLSearchParams(params).toString();
