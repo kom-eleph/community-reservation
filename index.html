@@ -227,27 +227,40 @@ function jsonp(params) {
 }
 
 // ── 初期化 ───────────────────────────────────
+// ページ読み込み時にローディングを即表示
+document.addEventListener('DOMContentLoaded', () => {
+  showScreen('loading');
+  setLoadingMsg('起動中...');
+});
+
 liff.init({ liffId: LIFF_ID }).then(async () => {
   if (!liff.isLoggedIn()) { liff.login(); return; }
+
   const prof = await liff.getProfile();
   userId   = prof.userId;
   userName = prof.displayName;
 
-  showScreen('loading');
-  setLoadingMsg('ユーザー情報を確認中...');
-
-  const userInfo = await jsonp({ action: 'getUserInfo', userId });
+  setLoadingMsg('データを読み込み中...');
   const mode = new URLSearchParams(location.search).get('mode');
 
-  if (userInfo.status === 'none') {
+  // 初回に必要なデータをまとめて1リクエストで取得
+  const init = await jsonp({ action: 'getInitialData', userId });
+
+  if (init.userInfo.status === 'none') {
     // 未登録 → プロフィール入力
     document.getElementById('inp-name').value = userName;
     showScreen('profile');
-  } else if (mode === 'myrsv') {
-    loadMyReservations();
-  } else {
-    loadEvents();
+    return;
   }
+
+  if (mode === 'myrsv') {
+    // 予約一覧はキャッシュ済みデータを即表示
+    renderMyReservations(init.reservations);
+  } else {
+    // イベント一覧はキャッシュ済みデータを即表示
+    renderEvents(init.events, null);
+  }
+
 }).catch(err => showError('初期化エラー: ' + err.message));
 
 // ── プロフィール登録 ──────────────────────────
