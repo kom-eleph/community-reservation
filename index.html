@@ -262,7 +262,7 @@
         <div class="done-icon" id="done-icon">✅</div>
         <div class="done-title" id="done-title">予約が完了しました</div>
         <div class="done-sub" id="done-detail"></div>
-        <button class="btn-green" onclick="safeClose()">閉じる</button>
+        <button class="btn-green" id="done-btn" onclick="safeClose()">閉じる</button>
       </div>
     </div>
   </div>
@@ -584,6 +584,17 @@ async function submitReservation() {
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
       document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
       state.changingReservationId = null;
+
+      // 変更完了後は予約一覧へ、新規完了後は閉じる
+      const doneBtn = document.getElementById('done-btn');
+      if (isChange) {
+        doneBtn.textContent = '予約一覧を見る';
+        doneBtn.onclick = () => loadMyReservations();
+      } else {
+        doneBtn.textContent = '閉じる';
+        doneBtn.onclick = () => safeClose();
+      }
+
       showScreen('done');
     } else {
       alert(data.message || '処理に失敗しました');
