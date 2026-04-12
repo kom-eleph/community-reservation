@@ -583,7 +583,6 @@ async function submitReservation() {
       document.getElementById('done-icon').textContent  = isChange ? '🔄' : '✅';
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
       document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
-      state.changingReservationId = null;
 
       // 変更完了後は予約一覧へ、新規完了後は閉じる
       const doneBtn = document.getElementById('done-btn');
@@ -594,7 +593,7 @@ async function submitReservation() {
         doneBtn.textContent = '閉じる';
         doneBtn.onclick = () => safeClose();
       }
-
+      state.changingReservationId = null;  // ボタン判定後にリセット
       showScreen('done');
     } else {
       alert(data.message || '処理に失敗しました');
