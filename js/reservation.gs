@@ -20,9 +20,10 @@ function getAvailableEvents(userId) {
       .map(e => {
         const eventScheds = activeScheds.filter(s => s[1] === e[0]);
 
-        // 修正: anyで1件でも申込済みならalreadyBooked=true
+        // イベントの全日程に予約済みの場合のみ「申込済み」としてボタン無効化
+        // 個別日程の申込済み判定は getSchedulesByEvent() の alreadyBooked で行う
         const alreadyBooked = userId
-          ? eventScheds.some(s =>
+          ? eventScheds.length > 0 && eventScheds.every(s =>
               reserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
             )
           : false;
