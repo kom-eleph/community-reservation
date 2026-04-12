@@ -233,6 +233,7 @@
     <div class="card">
       <h2>イベントを選択してください</h2>
       <div id="event-list"></div>
+      <div id="event-back-area"></div>
     </div>
   </div>
 
@@ -263,6 +264,7 @@
         <div class="done-title" id="done-title">予約が完了しました</div>
         <div class="done-sub" id="done-detail"></div>
         <button class="btn-green" id="done-btn" onclick="safeClose()">閉じる</button>
+        <button class="btn-gray" id="done-btn-sub" style="display:none;" onclick="safeClose()">閉じる</button>
       </div>
     </div>
   </div>
@@ -439,11 +441,14 @@ function renderEvents(events, filterEventId) {
   const list = document.getElementById('event-list');
   list.innerHTML = '';
 
+  const isChanging = !!state.changingReservationId;
+
   events.forEach(ev => {
     const btn = document.createElement('button');
     btn.className = 'event-btn';
 
-    if (ev.alreadyBooked) {
+    // 変更フロー中: 申込済みでも同イベントなら選択可（別日程を選ばせる）
+    if (ev.alreadyBooked && !(isChanging && ev.id === state.changingEventId)) {
       btn.disabled = true;
       btn.innerHTML = `${escHtml(ev.name)}<div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
     } else {
@@ -452,6 +457,14 @@ function renderEvents(events, filterEventId) {
     }
     list.appendChild(btn);
   });
+
+  // 変更フロー中はイベント一覧に「戻る」ボタンを表示
+  const backArea = document.getElementById('event-back-area');
+  if (isChanging) {
+    backArea.innerHTML = '<button class="btn-gray" onclick="cancelChange()">予約一覧に戻る</button>';
+  } else {
+    backArea.innerHTML = '';
+  }
 
   showScreen('event');
 }
@@ -584,14 +597,18 @@ async function submitReservation() {
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
       document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
 
-      // 変更完了後は予約一覧へ、新規完了後は閉じる
-      const doneBtn = document.getElementById('done-btn');
+      const doneBtn    = document.getElementById('done-btn');
+      const doneBtnSub = document.getElementById('done-btn-sub');
       if (isChange) {
         doneBtn.textContent = '予約一覧を見る';
         doneBtn.onclick = () => loadMyReservations();
+        doneBtnSub.style.display = 'block';
+        doneBtnSub.textContent = '閉じる';
+        doneBtnSub.onclick = () => safeClose();
       } else {
         doneBtn.textContent = '閉じる';
         doneBtn.onclick = () => safeClose();
+        doneBtnSub.style.display = 'none';
       }
       state.changingReservationId = null;  // ボタン判定後にリセット
       showScreen('done');
@@ -671,9 +688,17 @@ async function doCancel(reservationId) {
 }
 
 // ── 日程変更 ──────────────────────────────────
+function cancelChange() {
+  // 変更フローをリセットして予約一覧へ戻る
+  state.changingReservationId = null;
+  state.changingEventId = null;
+  loadMyReservations();
+}
+
 function startChange(reservationId, eventId) {
   state.changingReservationId = reservationId;
-  loadEvents(eventId);
+  state.changingEventId = eventId;  // 変更元イベントIDを記憶
+  loadEvents();  // フィルターなしで全イベント一覧へ
 }
 
 // ── ユーティリティ ─────────────────────────────
