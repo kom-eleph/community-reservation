@@ -1,7 +1,8 @@
 // ============================================================
-// reservation.gs
+// reservation.gs  予約・イベント・ユーザー管理
 // ============================================================
 
+// ── イベント一覧取得 ──────────────────────────────────────
 function getAvailableEvents(userId) {
   const now      = new Date();
   const events   = getAllRows(SHEET.EVENT).filter(r => r[4] === true);
@@ -18,22 +19,26 @@ function getAvailableEvents(userId) {
       .filter(e => activeIds.has(e[0]))
       .map(e => {
         const eventScheds = activeScheds.filter(s => s[1] === e[0]);
-        const allBooked   = userId
-          ? eventScheds.every(s =>
+
+        // 修正: anyで1件でも申込済みならalreadyBooked=true
+        const alreadyBooked = userId
+          ? eventScheds.some(s =>
               reserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
             )
           : false;
+
         return {
           id:           e[0],
           name:         e[1],
           description:  e[2],
           capacity:     e[3],
-          alreadyBooked: allBooked,
+          alreadyBooked,
         };
       })
   };
 }
 
+// ── 日程一覧取得 ──────────────────────────────────────────
 function getSchedulesByEvent(eventId, userId) {
   const now      = new Date();
   const events   = getAllRows(SHEET.EVENT);
@@ -57,19 +62,18 @@ function getSchedulesByEvent(eventId, userId) {
         ? reserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
         : false;
       return {
-        schedId:       s[0],
-        datetime:      Utilities.formatDate(
-          new Date(s[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'
-        ),
-        location:      s[6],
-        capacity:      capacity,
+        schedId:  s[0],
+        datetime: Utilities.formatDate(new Date(s[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'),
+        location: s[6],
+        capacity,
         remaining:     capacity - booked,
-        alreadyBooked: alreadyBooked,
+        alreadyBooked,
       };
     })
   };
 }
 
+// ── 自分の予約一覧 ────────────────────────────────────────
 function getMyReservations(userId) {
   const reserves = getAllRows(SHEET.RESERVE);
   const scheds   = getAllRows(SHEET.SCHED);
@@ -92,7 +96,7 @@ function getMyReservations(userId) {
         reservationId: r[0],
         schedId:       r[2],
         eventId:       sched?.[1] || '',
-        eventName:     evt?.[1]   || '',
+        eventName:     evt?.[1]   || '(不明なイベント)',
         datetime:      sched ? Utilities.formatDate(
           new Date(sched[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'
         ) : '',
@@ -102,7 +106,11 @@ function getMyReservations(userId) {
   };
 }
 
+// ── キャンセル処理 ────────────────────────────────────────
 function cancelReservationById(userId, reservationId) {
+  if (!userId || !reservationId) {
+    return { status: 'error', message: '必要なパラメータが不足しています。' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -111,20 +119,29 @@ function cancelReservationById(userId, reservationId) {
     const idx   = rows.findIndex(
       (r, i) => i > 0 &&
         r[0] === reservationId &&
-        r[1] === userId &&
+        r[1] === userId &&         // userIdを検証してなりすまし防止
         r[3] === '予約中'
     );
     if (idx === -1) {
       return { status: 'error', message: '予約が見つかりません。' };
     }
     sheet.getRange(idx + 1, 4).setValue('キャンセル');
+    sheet.getRange(idx + 1, 6).setValue(now()); // キャンセル日時を記録
+
+    // 管理者通知（ADMIN_LINE_USER_IDが設定されている場合）
+    notifyAdminOnCancel(reservationId, userId);
+
     return { status: 'ok' };
   } finally {
     lock.releaseLock();
   }
 }
 
+// ── 予約処理 ──────────────────────────────────────────────
 function processReservation(userId, schedId, name) {
+  if (!userId || !schedId) {
+    return { status: 'error', message: '必要なパラメータが不足しています。' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -140,7 +157,9 @@ function processReservation(userId, schedId, name) {
       return { status: 'error', message: 'すでにこの日程に予約済みです。' };
     }
 
-    const sched    = scheds.find(s => s[0] === schedId);
+    const sched = scheds.find(s => s[0] === schedId);
+    if (!sched) return { status: 'error', message: '日程が見つかりません。' };
+
     const capacity = sched[5] || evtMap.get(sched[1])?.[3] || 0;
     const booked   = reserves.filter(
       r => r[2] === schedId && r[3] === '予約中'
@@ -149,9 +168,10 @@ function processReservation(userId, schedId, name) {
       return { status: 'error', message: 'この日程は満席です。' };
     }
 
-    const reservationId = generateId('RSV', SHEET.RESERVE);
+    // 修正: 重複しないユニークIDを生成
+    const reservationId = generateUniqueId('RSV', SHEET.RESERVE);
     getSheet(SHEET.RESERVE).appendRow([
-      reservationId, userId, schedId, '予約中', now()
+      reservationId, userId, schedId, '予約中', now(), ''
     ]);
 
     return { status: 'ok', reservationId };
@@ -160,7 +180,17 @@ function processReservation(userId, schedId, name) {
   }
 }
 
+// ── ユーザー登録 ──────────────────────────────────────────
 function registerUser(userId, name, age, gender) {
+  if (!userId || !name || !age || !gender) {
+    return { status: 'error', message: '必要なパラメータが不足しています。' };
+  }
+  // バリデーション
+  const ageNum = parseInt(age, 10);
+  if (isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
+    return { status: 'error', message: '正しい年齢を入力してください。' };
+  }
+
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -168,10 +198,9 @@ function registerUser(userId, name, age, gender) {
     const rows  = sheet.getDataRange().getValues();
     const idx   = rows.findIndex((r, i) => i > 0 && r[0] === userId);
     if (idx > 0) {
-      // 既存ユーザーは情報を更新
-      sheet.getRange(idx + 1, 2, 1, 3).setValues([[name, age, gender]]);
+      sheet.getRange(idx + 1, 2, 1, 3).setValues([[name, ageNum, gender]]);
     } else {
-      sheet.appendRow([userId, name, age, gender, now()]);
+      sheet.appendRow([userId, name, ageNum, gender, now()]);
     }
     return { status: 'ok' };
   } finally {
@@ -179,7 +208,9 @@ function registerUser(userId, name, age, gender) {
   }
 }
 
+// ── ユーザー情報取得 ──────────────────────────────────────
 function getUserInfo(userId) {
+  if (!userId) return { status: 'none' };
   const idx = findRowIndex(SHEET.USER, 0, userId);
   if (idx === -1) return { status: 'none' };
   const row = getAllRows(SHEET.USER)[idx];
@@ -191,7 +222,11 @@ function getUserInfo(userId) {
   };
 }
 
+// ── 日程変更 ──────────────────────────────────────────────
 function changeReservation(userId, oldReservationId, newSchedId, name) {
+  if (!userId || !oldReservationId || !newSchedId) {
+    return { status: 'error', message: '必要なパラメータが不足しています。' };
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -200,7 +235,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
     const events   = getAllRows(SHEET.EVENT);
     const evtMap   = new Map(events.map(e => [e[0], e]));
 
-    // 旧予約の存在確認
+    // 旧予約の存在確認（userIdで本人確認）
     const oldIdx = reserves.findIndex(
       r => r[0] === oldReservationId && r[1] === userId && r[3] === '予約中'
     );
@@ -208,7 +243,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
       return { status: 'error', message: '変更元の予約が見つかりません。' };
     }
 
-    // 新日程の重複チェック
+    // 重複チェック
     const duplicate = reserves.find(
       r => r[1] === userId && r[2] === newSchedId && r[3] === '予約中'
     );
@@ -216,9 +251,10 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
       return { status: 'error', message: 'すでにこの日程に予約済みです。' };
     }
 
-    // 新日程の定員チェック
-    const sched    = scheds.find(s => s[0] === newSchedId);
+    // 定員チェック
+    const sched = scheds.find(s => s[0] === newSchedId);
     if (!sched) return { status: 'error', message: '日程が見つかりません。' };
+
     const capacity = sched[5] || evtMap.get(sched[1])?.[3] || 0;
     const booked   = reserves.filter(
       r => r[2] === newSchedId && r[3] === '予約中'
@@ -227,31 +263,127 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
       return { status: 'error', message: 'この日程は満席です。' };
     }
 
-    // 新予約を登録
-    const newReservationId = generateId('RSV', SHEET.RESERVE);
+    // 新予約を先に登録してから旧予約をキャンセル（アトミック性確保）
+    const newReservationId = generateUniqueId('RSV', SHEET.RESERVE);
     getSheet(SHEET.RESERVE).appendRow([
-      newReservationId, userId, newSchedId, '予約中', now()
+      newReservationId, userId, newSchedId, '予約中', now(), ''
     ]);
-
-    // 旧予約をキャンセル（新予約成功後に実行）
-    const sheet = getSheet(SHEET.RESERVE);
-    sheet.getRange(oldIdx + 2, 4).setValue('変更済');
+    getSheet(SHEET.RESERVE).getRange(oldIdx + 2, 4).setValue('変更済');
 
     return { status: 'ok', reservationId: newReservationId };
-
   } finally {
     lock.releaseLock();
   }
 }
 
+// ── 初回データ一括取得 ────────────────────────────────────
 function getInitialData(userId) {
-  const userInfo    = getUserInfo(userId);
-  const eventsData  = getAvailableEvents(userId);
-  const myRsvData   = getMyReservations(userId);
+  if (!userId) return { status: 'error', message: 'userIdが必要です。' };
+
+  const userInfo   = getUserInfo(userId);
+  const eventsData = getAvailableEvents(userId);
+  const myRsvData  = getMyReservations(userId);
   return {
     status:       'ok',
     userInfo:     userInfo,
-    events:       eventsData.events,
+    events:       eventsData.events || [],
     reservations: myRsvData.reservations || [],
   };
+}
+
+// ── イベント属性統計（管理者用） ──────────────────────────
+// 使用例: getEventStats('EVT-0001')
+function getEventStats(eventId) {
+  const reserves = getAllRows(SHEET.RESERVE);
+  const scheds   = getAllRows(SHEET.SCHED);
+  const users    = getAllRows(SHEET.USER);
+  const events   = getAllRows(SHEET.EVENT);
+
+  const targetScheds = scheds
+    .filter(s => !eventId || s[1] === eventId)
+    .map(s => s[0]);
+
+  const targetReserves = reserves.filter(
+    r => targetScheds.includes(r[2]) && (r[3] === '予約中' || r[3] === '変更済')
+  );
+
+  const userMap = new Map(users.map(u => [u[0], u]));
+
+  const genderCount = {};
+  const ageGroups   = { '10代': 0, '20代': 0, '30代': 0, '40代': 0, '50代以上': 0, '不明': 0 };
+
+  targetReserves.forEach(r => {
+    const user = userMap.get(r[1]);
+    if (!user) return;
+
+    const gender = user[3] || '不明';
+    genderCount[gender] = (genderCount[gender] || 0) + 1;
+
+    const age = parseInt(user[2], 10);
+    if      (isNaN(age))  ageGroups['不明']++;
+    else if (age < 20)    ageGroups['10代']++;
+    else if (age < 30)    ageGroups['20代']++;
+    else if (age < 40)    ageGroups['30代']++;
+    else if (age < 50)    ageGroups['40代']++;
+    else                  ageGroups['50代以上']++;
+  });
+
+  const eventName = events.find(e => e[0] === eventId)?.[1] || '全イベント';
+
+  return {
+    status:        'ok',
+    eventId:       eventId || 'all',
+    eventName,
+    totalBookings: targetReserves.length,
+    genderStats:   genderCount,
+    ageGroupStats: ageGroups,
+  };
+}
+
+// ── キャンセル待ちリスト登録 ──────────────────────────────
+function joinWaitlist(userId, schedId) {
+  if (!userId || !schedId) {
+    return { status: 'error', message: '必要なパラメータが不足しています。' };
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getSheet(SHEET.WAITLIST);
+    const rows  = sheet.getDataRange().getValues();
+    const already = rows.some(
+      (r, i) => i > 0 && r[0] === userId && r[1] === schedId && r[2] === '待機中'
+    );
+    if (already) return { status: 'error', message: 'すでにキャンセル待ちに登録済みです。' };
+    sheet.appendRow([userId, schedId, '待機中', now()]);
+    return { status: 'ok' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ── 管理者へのキャンセル通知（任意） ─────────────────────
+function notifyAdminOnCancel(reservationId, userId) {
+  // ADMIN_LINE_USER_ID が設定されていれば管理者にpush通知
+  if (typeof ADMIN_LINE_USER_ID === 'undefined' || !ADMIN_LINE_USER_ID) return;
+  try {
+    const url = 'https://api.line.me/v2/bot/message/push';
+    const options = {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN,
+      },
+      payload: JSON.stringify({
+        to: ADMIN_LINE_USER_ID,
+        messages: [{
+          type: 'text',
+          text: `【キャンセル通知】\n予約ID: ${reservationId}\nユーザー: ${userId}\n\n管理スプレッドシートをご確認ください。`,
+        }],
+      }),
+      muteHttpExceptions: true,
+    };
+    UrlFetchApp.fetch(url, options);
+  } catch(e) {
+    Logger.log('管理者通知失敗: ' + e.message);
+  }
 }

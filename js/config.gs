@@ -2,26 +2,30 @@
 // config.gs  ★ここだけ自分の値に書き換える
 // ============================================================
 
-const SPREADSHEET_ID = 'hogehoge';
+const SPREADSHEET_ID         = 'hogehoge';
 const LINE_CHANNEL_ACCESS_TOKEN = 'hogehoge';
-const LINE_CHANNEL_SECRET = 'hogehoge';
+const LINE_CHANNEL_SECRET    = 'hogehoge';
+
+// 管理者通知用LINEユーザーID（任意。不要なら空文字 '' のまま）
+const ADMIN_LINE_USER_ID = '';
 
 // シート名（変更しないこと）
 const SHEET = {
-  EVENT:   'イベントマスタ',
-  SCHED:   '日程マスタ',
-  FAQ:     'FAQシート',
-  RESERVE: '予約シート',
-  USER:    'ユーザーシート',
-  SESSION: 'セッションシート',
+  EVENT:    'イベントマスタ',
+  SCHED:    '日程マスタ',
+  FAQ:      'FAQシート',
+  RESERVE:  '予約シート',
+  USER:     'ユーザーシート',
+  SESSION:  'セッションシート',
+  WAITLIST: 'キャンセル待ちシート',  // 追加
 };
 
 // セッションState定数
 const STATE = {
-  IDLE:         'IDLE',
-  WAITING_NAME: 'WAITING_NAME',
-  WAITING_SCHED:'WAITING_SCHED',
-  CONFIRM:      'CONFIRM',
+  IDLE:          'IDLE',
+  WAITING_NAME:  'WAITING_NAME',
+  WAITING_SCHED: 'WAITING_SCHED',
+  CONFIRM:       'CONFIRM',
 };
 
 // ============================================================
@@ -36,9 +40,13 @@ function getSheet(name) {
 
 function getAllRows(sheetName) {
   const sheet = getSheet(sheetName);
+  if (!sheet) {
+    Logger.log('シートが見つかりません: ' + sheetName);
+    return [];
+  }
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) return [];
-  return values.slice(1); // ヘッダーを除く
+  return values.slice(1);
 }
 
 function findRowIndex(sheetName, colIndex, value) {
@@ -46,27 +54,49 @@ function findRowIndex(sheetName, colIndex, value) {
   return rows.findIndex(r => r[colIndex] === value);
 }
 
-function generateId(prefix, sheetName) {
+// 修正: 行数ベースの採番から日付+ランダムの採番に変更
+// 行数+1は削除・変更後に重複しうるため
+function generateUniqueId(prefix, sheetName) {
+  const dateStr  = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  const randomStr = Math.random().toString(36).substr(2, 5).toUpperCase();
+  const candidate = `${prefix}-${dateStr}-${randomStr}`;
+
+  // 万が一衝突した場合はリトライ（事実上発生しない）
   const rows = getAllRows(sheetName);
-  const num = rows.length + 1;
-  return `${prefix}-${String(num).padStart(4, '0')}`;
+  if (rows.some(r => r[0] === candidate)) {
+    return generateUniqueId(prefix, sheetName);
+  }
+  return candidate;
+}
+
+// 後方互換のためgenerateIdも残す（非推奨）
+function generateId(prefix, sheetName) {
+  Logger.log('[WARN] generateId() is deprecated. Use generateUniqueId()');
+  return generateUniqueId(prefix, sheetName);
 }
 
 function now() {
   return new Date();
 }
 
+// ── 接続確認用 ────────────────────────────────────────────
 function testAuth() {
-  const url = 'https://api.line.me/v2/bot/message/reply';
+  const url = 'https://api.line.me/v2/bot/info';
   const options = {
-    method: 'post',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN,
-    },
-    payload: JSON.stringify({}),
+    method: 'get',
+    headers: { 'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN },
     muteHttpExceptions: true,
   };
   const res = UrlFetchApp.fetch(url, options);
-  Logger.log(res.getResponseCode());
+  Logger.log('LINE Bot接続確認: ' + res.getResponseCode());
+  Logger.log(res.getContentText());
+}
+
+function testSpreadsheet() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  Logger.log('スプレッドシート: ' + ss.getName());
+  Object.values(SHEET).forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    Logger.log(name + ': ' + (sheet ? '✅ 存在' : '❌ 見つからない'));
+  });
 }

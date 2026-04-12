@@ -7,49 +7,62 @@ function doGet(e) {
   const callback = e.parameter.callback;
   let result     = { status: 'error', message: 'unknown action' };
 
+  // 全リクエストをログに記録（デバッグ用）
+  Logger.log(`doGet action=${action} userId=${e.parameter.userId || '(none)'}`);
+
   try {
-    if (action === 'getEvents') {
-      result = getAvailableEvents(e.parameter.userId);
-    } else if (action === 'getSchedules') {
-      result = getSchedulesByEvent(e.parameter.eventId, e.parameter.userId);
-    } else if (action === 'getSchedulesByEvent') {
-      result = getSchedulesByEvent(e.parameter.eventId);
-    } else if (action === 'reserve') {
-      result = processReservation(
-        e.parameter.userId,
-        e.parameter.schedId,
-        e.parameter.name
-      );
-    } else if (action === 'getMyReservations') {
-      result = getMyReservations(e.parameter.userId);
-    } else if (action === 'cancel') {
-      result = cancelReservationById(
-        e.parameter.userId,
-        e.parameter.reservationId
-      );
-    } else if (action === 'registerUser') {
-      result = registerUser(
-        e.parameter.userId,
-        e.parameter.name,
-        e.parameter.age,
-        e.parameter.gender
-      );
-    } else if (action === 'getUserInfo') {
-      result = getUserInfo(e.parameter.userId);
-    } else if (action === 'change') {
-      result = changeReservation(
-        e.parameter.userId,
-        e.parameter.oldReservationId,
-        e.parameter.newSchedId,
-        e.parameter.name
-      );
-    } else if (action === 'getInitialData') {
-      result = getInitialData(e.parameter.userId);
-    } else {
-      result = { status: 'ok' };
+    switch (action) {
+      case 'getEvents':
+        result = getAvailableEvents(e.parameter.userId);
+        break;
+      case 'getSchedules':
+      case 'getSchedulesByEvent':
+        result = getSchedulesByEvent(e.parameter.eventId, e.parameter.userId);
+        break;
+      case 'reserve':
+        result = processReservation(e.parameter.userId, e.parameter.schedId, e.parameter.name);
+        break;
+      case 'getMyReservations':
+        result = getMyReservations(e.parameter.userId);
+        break;
+      case 'cancel':
+        result = cancelReservationById(e.parameter.userId, e.parameter.reservationId);
+        break;
+      case 'registerUser':
+        result = registerUser(
+          e.parameter.userId,
+          e.parameter.name,
+          e.parameter.age,
+          e.parameter.gender
+        );
+        break;
+      case 'getUserInfo':
+        result = getUserInfo(e.parameter.userId);
+        break;
+      case 'change':
+        result = changeReservation(
+          e.parameter.userId,
+          e.parameter.oldReservationId,
+          e.parameter.newSchedId,
+          e.parameter.name
+        );
+        break;
+      case 'getInitialData':
+        result = getInitialData(e.parameter.userId);
+        break;
+      case 'getEventStats':
+        // 管理者向け（本番ではAdmin用パスワードの確認を追加推奨）
+        result = getEventStats(e.parameter.eventId);
+        break;
+      case 'joinWaitlist':
+        result = joinWaitlist(e.parameter.userId, e.parameter.schedId);
+        break;
+      default:
+        result = { status: 'error', message: 'unknown action: ' + action };
     }
   } catch(err) {
-    result = { status: 'error', message: err.message };
+    Logger.log(`[ERROR] action=${action} message=${err.message}\n${err.stack}`);
+    result = { status: 'error', message: 'サーバーエラーが発生しました。しばらく時間をおいて再度お試しください。' };
   }
 
   const json = JSON.stringify(result);
@@ -66,26 +79,27 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
-    const events = body.events || [];
-    if (events.length === 0) {
-      return HtmlService.createHtmlOutput('ok');
-    }
-    // LIFFからの予約POSTリクエスト
+
+    // LIFFからのPOSTリクエスト処理
     if (body.action === 'reserve') {
-      const result = processReservation(
-        body.userId, body.schedId, body.name
-      );
+      const result = processReservation(body.userId, body.schedId, body.name);
       return ContentService
         .createTextOutput(JSON.stringify(result))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    // LINE Webhookイベント処理
+    const events = body.events || [];
+    if (events.length === 0) return HtmlService.createHtmlOutput('ok');
     events.forEach(event => handleEvent(event));
+
   } catch (err) {
-    Logger.log('doPost error: ' + err.message);
+    Logger.log('doPost error: ' + err.message + '\n' + err.stack);
   }
   return HtmlService.createHtmlOutput('ok');
 }
 
+// ── LINEイベントハンドラ ──────────────────────────────────
 function handleEvent(event) {
   if (event.type !== 'message') return;
   if (event.message.type !== 'text') return;
@@ -94,31 +108,29 @@ function handleEvent(event) {
   const text       = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  // セッション取得
+  Logger.log(`handleEvent userId=${userId} text=${text}`);
+
   const session = getSession(userId);
   const state   = session ? session.state : STATE.IDLE;
 
-  // ── 予約メニュー操作 ──────────────────────────
-  if (text === '予約する')      return startReservation(userId, replyToken);
-  if (text === '予約確認')      return showMyReservation(userId, replyToken);
-  if (text === '予約変更')      return startChange(userId, replyToken);
-  if (text === 'キャンセル')    return startCancel(userId, replyToken);
+  if (text === '予約する')   return startReservation(userId, replyToken);
+  if (text === '予約確認')   return showMyReservation(userId, replyToken);
+  if (text === '予約変更')   return startChange(userId, replyToken);
+  if (text === 'キャンセル') return startCancel(userId, replyToken);
 
-  // ── セッション中の入力処理 ────────────────────
   if (state === STATE.WAITING_NAME)  return handleNameInput(userId, text, replyToken, session);
   if (state === STATE.WAITING_SCHED) return handleSchedSelect(userId, text, replyToken, session);
   if (state === STATE.CONFIRM)       return handleConfirm(userId, text, replyToken, session);
 
-  // ── FAQ・問い合わせ ───────────────────────────
   handleInquiry(userId, text, replyToken);
 }
 
-// ── LINE返信ヘルパー ──────────────────────────────
+// ── LINE返信ヘルパー ──────────────────────────────────────
 function replyMessage(replyToken, messages) {
   if (!Array.isArray(messages)) messages = [{ type: 'text', text: messages }];
   const url = 'https://api.line.me/v2/bot/message/reply';
   const options = {
-    method: 'post',
+    method:  'post',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + LINE_CHANNEL_ACCESS_TOKEN,
@@ -126,31 +138,30 @@ function replyMessage(replyToken, messages) {
     payload: JSON.stringify({ replyToken, messages }),
     muteHttpExceptions: true,
   };
-  UrlFetchApp.fetch(url, options);
+  const res = UrlFetchApp.fetch(url, options);
+  if (res.getResponseCode() !== 200) {
+    Logger.log('LINE reply error: ' + res.getContentText());
+  }
 }
 
 function replyText(replyToken, text) {
   replyMessage(replyToken, [{ type: 'text', text }]);
 }
 
+// ── ウォームアップ（毎時トリガー推奨） ───────────────────
 function keepAlive() {
-  // スプレッドシートに軽くアクセスしてGASをウォームアップする
   getSheet(SHEET.SESSION);
   Logger.log('keepAlive: ' + new Date());
 }
 
-
-// ── 動作確認用テスト関数 ─────────────────────────
+// ── テスト関数 ────────────────────────────────────────────
 function testSetup() {
-  // スプレッドシート接続テスト
+  testSpreadsheet();
+
   const sheet = getSheet(SHEET.USER);
-  Logger.log('ユーザーシート取得: ' + (sheet ? '成功' : '失敗'));
+  sheet.appendRow(['U_TEST_001', 'テストユーザー', 30, '男性', now()]);
+  Logger.log('テスト書き込み完了');
 
-  // テストユーザー書き込み
-  sheet.appendRow(['U_TEST_001', 'テストユーザー', now()]);
-  Logger.log('テスト書き込み完了 → ユーザーシートを確認してください');
-
-  // セッション書き込みテスト
   setSession('U_TEST_001', STATE.IDLE, {});
   Logger.log('セッション書き込み完了');
 
