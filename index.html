@@ -9,8 +9,14 @@
 <title>イベント予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #f0f4f8; min-height: 100vh; }
+  body {
+    font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f0f4f8;
+    min-height: 100vh;
+  }
 
   /* ── Header ── */
   .header {
@@ -34,6 +40,11 @@
     padding: 20px;
     margin-bottom: 14px;
     box-shadow: 0 2px 12px rgba(0,0,0,.07);
+    animation: fadeIn .2s ease;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   .card h2 { font-size: 13px; color: #9ca3af; margin-bottom: 16px; font-weight: 500; letter-spacing: .3px; }
 
@@ -43,9 +54,11 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { font-size: 13px; color: #9ca3af; }
 
-  .error-wrap { text-align: center; padding: 48px 20px; }
+  /* ── Error ── */
+  .error-wrap { text-align: center; padding: 36px 16px; }
   .error-icon { font-size: 40px; margin-bottom: 12px; }
-  .error-msg { color: #ef4444; font-size: 14px; line-height: 1.6; }
+  .error-msg { color: #ef4444; font-size: 14px; line-height: 1.6; white-space: pre-line; margin-bottom: 20px; }
+  .error-actions { display: flex; flex-direction: column; gap: 10px; }
 
   /* ── Buttons ── */
   .event-btn {
@@ -60,12 +73,14 @@
     cursor: pointer;
     text-align: left;
     transition: all .15s;
+    font-family: inherit;
   }
   .event-btn:hover:not(:disabled) { border-color: #06C755; background: #f0fdf4; }
   .event-btn:active:not(:disabled) { transform: scale(.99); }
   .event-btn .sub { font-size: 12px; color: #6b7280; font-weight: 400; margin-top: 4px; }
   .event-btn:disabled { opacity: .4; cursor: default; }
 
+  /* 残席バッジ付きスケジュールボタン */
   .sched-btn {
     display: block; width: 100%; padding: 14px 16px;
     margin-bottom: 8px;
@@ -77,11 +92,13 @@
     text-align: left;
     transition: all .15s;
     position: relative;
+    font-family: inherit;
   }
   .sched-btn:hover:not(.full):not(.already) { border-color: #06C755; background: #f0fdf4; }
-  .sched-btn.full, .sched-btn.already { opacity: .5; cursor: default; }
+  .sched-btn.full { opacity: .5; cursor: default; }
+  .sched-btn.already { opacity: .7; cursor: default; background: #f0f9ff; border-color: #bfdbfe; }
   .sched-btn .date { font-weight: 600; color: #111827; font-size: 15px; }
-  .sched-btn.full .date, .sched-btn.already .date { color: #9ca3af; }
+  .sched-btn.full .date { color: #9ca3af; }
   .sched-btn .info { font-size: 12px; color: #6b7280; margin-top: 3px; }
   .sched-badge {
     position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
@@ -99,6 +116,7 @@
     cursor: pointer;
     transition: all .15s;
     letter-spacing: .3px;
+    font-family: inherit;
   }
   .btn-green:hover:not(:disabled) { background: #04a847; }
   .btn-green:active:not(:disabled) { transform: scale(.99); }
@@ -110,6 +128,7 @@
     border: 1.5px solid #e5e7eb; border-radius: 12px;
     font-size: 14px; cursor: pointer; margin-top: 10px;
     transition: all .15s;
+    font-family: inherit;
   }
   .btn-gray:hover { background: #f9fafb; }
 
@@ -119,6 +138,7 @@
     border: 1.5px solid #fecaca; border-radius: 12px;
     font-size: 14px; cursor: pointer; margin-top: 10px;
     transition: all .15s;
+    font-family: inherit;
   }
   .btn-red:hover { background: #fef2f2; }
 
@@ -132,6 +152,8 @@
     font-size: 15px; outline: none;
     transition: border-color .15s, box-shadow .15s;
     background: #f9fafb;
+    font-family: inherit;
+    -webkit-appearance: none;
   }
   .form-input:focus { border-color: #06C755; box-shadow: 0 0 0 3px rgba(6,199,85,.1); background: #fff; }
   .form-select {
@@ -139,8 +161,14 @@
     border: 1.5px solid #e5e7eb; border-radius: 10px;
     font-size: 15px; background: #f9fafb; outline: none;
     transition: border-color .15s;
+    font-family: inherit;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
   }
-  .form-select:focus { border-color: #06C755; background: #fff; }
+  .form-select:focus { border-color: #06C755; background-color: #fff; }
 
   /* ── Confirm ── */
   .confirm-box { background: #f9fafb; border-radius: 12px; padding: 16px; margin-bottom: 18px; }
@@ -168,7 +196,7 @@
   .rsv-detail { font-size: 13px; color: #6b7280; line-height: 1.8; }
   .rsv-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   .rsv-actions .btn-green { font-size: 13px; padding: 11px; margin-top: 0; }
-  .rsv-actions .btn-red { font-size: 13px; padding: 11px; margin-top: 0; border-radius: 10px; }
+  .rsv-actions .btn-red   { font-size: 13px; padding: 11px; margin-top: 0; border-radius: 10px; }
 
   /* ── Done / Cancelled ── */
   .done-wrap { text-align: center; padding: 36px 16px; }
@@ -178,14 +206,71 @@
 
   .status-none { text-align: center; padding: 36px; color: #9ca3af; font-size: 14px; }
 
+  /* ── 残席更新バナー ── */
+  .refresh-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #f0fdf4; border: 1px solid #bbf7d0;
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;
+    font-size: 12px; color: #16a34a;
+  }
+  .refresh-bar button {
+    background: none; border: none; cursor: pointer;
+    font-size: 12px; color: #06C755; font-weight: 600;
+    padding: 0; font-family: inherit;
+  }
+  .refresh-bar button:disabled { color: #9ca3af; cursor: default; }
+
+  /* ── カスタムモーダル ── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.5);
+    z-index: 200;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #fff;
+    border-radius: 20px 20px 0 0;
+    padding: 28px 20px 36px;
+    width: 100%; max-width: 480px;
+    text-align: center;
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  .modal-icon  { font-size: 44px; margin-bottom: 12px; }
+  .modal-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+  .modal-body  { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 24px; }
+  .modal-actions { display: flex; flex-direction: column; gap: 10px; }
+  .modal-actions .btn-red   { margin-top: 0; }
+  .modal-actions .btn-gray  { margin-top: 0; }
+
   /* ── Screen manager ── */
   .screen { display: none; }
+
+  /* ── Toast通知 ── */
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #1f2937; color: #fff;
+    padding: 10px 20px; border-radius: 100px;
+    font-size: 13px; font-weight: 500;
+    opacity: 0; transition: all .3s;
+    z-index: 300; white-space: nowrap;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
 <div class="header">イベント予約</div>
 <div class="container">
 
+  <!-- ローディング -->
   <div id="s-loading" class="screen">
     <div class="loading-wrap">
       <div class="spinner"></div>
@@ -193,11 +278,16 @@
     </div>
   </div>
 
+  <!-- エラー -->
   <div id="s-error" class="screen">
     <div class="card">
       <div class="error-wrap">
         <div class="error-icon">⚠️</div>
         <div class="error-msg" id="error-msg"></div>
+        <div class="error-actions">
+          <button class="btn-green" onclick="location.reload()">再読み込み</button>
+          <button class="btn-gray"  onclick="safeClose()">閉じる</button>
+        </div>
       </div>
     </div>
   </div>
@@ -208,11 +298,16 @@
       <h2>はじめに情報を登録してください</h2>
       <div class="form-group">
         <label class="form-label">お名前<span>*</span></label>
-        <input class="form-input" id="inp-name" type="text" placeholder="例：山田 太郎" maxlength="30">
+        <input class="form-input" id="inp-name" type="text"
+               placeholder="例：山田 太郎" maxlength="30"
+               autocomplete="name">
       </div>
       <div class="form-group">
         <label class="form-label">年齢<span>*</span></label>
-        <input class="form-input" id="inp-age" type="number" placeholder="例：25" min="1" max="120">
+        <!-- inputmode="numeric" でモバイル時テンキー表示 -->
+        <input class="form-input" id="inp-age" type="number"
+               inputmode="numeric" pattern="[0-9]*"
+               placeholder="例：25" min="1" max="120">
       </div>
       <div class="form-group">
         <label class="form-label">性別<span>*</span></label>
@@ -241,6 +336,11 @@
   <div id="s-sched" class="screen">
     <div class="card">
       <h2 id="sched-title">日程を選択してください</h2>
+      <!-- 残席更新バナー -->
+      <div class="refresh-bar" id="refresh-bar">
+        <span id="refresh-label">残席数は変動する場合があります</span>
+        <button id="refresh-btn" onclick="refreshSchedView()">🔄 更新</button>
+      </div>
       <div id="sched-list"></div>
       <button class="btn-gray" id="sched-back-btn">戻る</button>
     </div>
@@ -252,7 +352,7 @@
       <h2>予約内容を確認してください</h2>
       <div class="confirm-box" id="confirm-detail"></div>
       <button class="btn-green" id="confirm-btn" onclick="submitReservation()">この内容で予約する</button>
-      <button class="btn-gray" onclick="showScreen('sched')">戻る</button>
+      <button class="btn-gray"  onclick="showScreen('sched')">戻る</button>
     </div>
   </div>
 
@@ -260,11 +360,11 @@
   <div id="s-done" class="screen">
     <div class="card">
       <div class="done-wrap">
-        <div class="done-icon" id="done-icon">✅</div>
+        <div class="done-icon"  id="done-icon">✅</div>
         <div class="done-title" id="done-title">予約が完了しました</div>
-        <div class="done-sub" id="done-detail"></div>
-        <button class="btn-green" id="done-btn" onclick="safeClose()">閉じる</button>
-        <button class="btn-gray" id="done-btn-sub" style="display:none;" onclick="safeClose()">閉じる</button>
+        <div class="done-sub"   id="done-detail"></div>
+        <button class="btn-green" id="done-btn"     onclick="safeClose()">閉じる</button>
+        <button class="btn-gray"  id="done-btn-sub" style="display:none;" onclick="safeClose()">閉じる</button>
       </div>
     </div>
   </div>
@@ -286,36 +386,58 @@
         <div class="done-title">キャンセルしました</div>
         <div class="done-sub">またのご参加をお待ちしています</div>
         <button class="btn-green" onclick="loadMyReservations()">予約一覧に戻る</button>
-        <button class="btn-gray" onclick="safeClose()">閉じる</button>
+        <button class="btn-gray"  onclick="safeClose()">閉じる</button>
       </div>
     </div>
   </div>
 
+</div><!-- /.container -->
+
+<!-- ── カスタムキャンセル確認モーダル ── -->
+<div id="modal-cancel" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-cancel-title">
+  <div class="modal-box">
+    <div class="modal-icon">🗑️</div>
+    <div class="modal-title" id="modal-cancel-title">キャンセルの確認</div>
+    <div class="modal-body">
+      この予約をキャンセルしてよろしいですか？<br>
+      キャンセル後の取り消しはできません。
+    </div>
+    <div class="modal-actions">
+      <button class="btn-red"  id="modal-cancel-ok">キャンセルする</button>
+      <button class="btn-gray" id="modal-cancel-ng">戻る</button>
+    </div>
+  </div>
 </div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
 
 <script>
 'use strict';
 
-const LIFF_ID  = '2009742773-6qUiijpk';
-const GAS_URL  = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNUOUrIzVqoGKx4Rm7AmtTZMxz3XVpDR8DLlr8_qYfi8O36/exec';
+const LIFF_ID = '2009742773-6qUiijpk';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNUOUrIzVqoGKx4Rm7AmtTZMxz3XVpDR8DLlr8_qYfi8O36/exec';
 
-// ── アプリ状態 ─────────────────────────────────
+// ── アプリ状態 ──────────────────────────────────────────────
 const state = {
-  userId:               '',
-  userName:             '',
-  userInfo:             null,   // getUserInfo() の結果をキャッシュ
-  selectedEvent:        null,
-  selectedSched:        null,
-  changeFromEventId:    null,
-  changingReservationId:null,
-  cbCount:              0,
-  submitting:           false,  // 二重送信防止フラグ
+  userId:                '',
+  userName:              '',
+  userInfo:              null,
+  selectedEvent:         null,
+  selectedSched:         null,
+  changeFromEventId:     null,
+  changingReservationId: null,
+  cbCount:               0,
+  submitting:            false,     // 二重送信防止
+  schedRefreshTimer:     null,      // 残席自動更新タイマー
+  currentScreen:         'loading', // 現在表示中の画面名
 };
 
-// ── JSONP ─────────────────────────────────────
+// ── JSONP ──────────────────────────────────────────────────
+// _r (ランダム値) を追加してGASキャッシュを確実に回避する
 function jsonp(params) {
   return new Promise((resolve, reject) => {
-    const cbName = '__cb' + (state.cbCount++);
+    const cbName   = '__cb' + (state.cbCount++);
     const timeoutId = setTimeout(() => {
       cleanup();
       reject(new Error('タイムアウトしました（20秒）'));
@@ -329,18 +451,20 @@ function jsonp(params) {
 
     window[cbName] = (data) => { cleanup(); resolve(data); };
 
+    // キャッシュバスティング: タイムスタンプ + ランダム値
     params.callback = cbName;
     params._t = Date.now();
+    params._r = Math.random().toString(36).substr(2, 9); // ← 追加
 
     const el = document.createElement('script');
-    el.id = cbName + '_s';
-    el.src = GAS_URL + '?' + new URLSearchParams(params).toString();
+    el.id    = cbName + '_s';
+    el.src   = GAS_URL + '?' + new URLSearchParams(params).toString();
     el.onerror = () => { cleanup(); reject(new Error('通信エラーが発生しました')); };
     document.body.appendChild(el);
   });
 }
 
-// ── 初期化 ────────────────────────────────────
+// ── 初期化 ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   showScreen('loading');
   setLoadingMsg('起動中...');
@@ -349,7 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
 liff.init({ liffId: LIFF_ID }).then(async () => {
   if (!liff.isLoggedIn()) { liff.login(); return; }
 
-  const prof = await liff.getProfile();
+  const prof    = await liff.getProfile();
   state.userId   = prof.userId;
   state.userName = prof.displayName;
 
@@ -359,7 +483,6 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   try {
     const init = await jsonp({ action: 'getInitialData', userId: state.userId });
 
-    // userInfoをキャッシュ（確認画面で再取得しない）
     state.userInfo = init.userInfo;
 
     if (init.userInfo.status === 'none') {
@@ -373,24 +496,24 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
     } else {
       renderEvents(init.events, null);
     }
-  } catch(err) {
+  } catch (err) {
     showError('読み込みに失敗しました。\nLINEアプリを再起動してお試しください。\n\n詳細: ' + err.message);
   }
 
 }).catch(err => showError('初期化エラー: ' + err.message));
 
-// ── プロフィール登録 ──────────────────────────
+// ── プロフィール登録 ──────────────────────────────────────
 async function submitProfile() {
   const name   = document.getElementById('inp-name').value.trim();
   const age    = document.getElementById('inp-age').value.trim();
   const gender = document.getElementById('inp-gender').value;
 
-  if (!name)   { alert('お名前を入力してください'); return; }
-  if (!age || isNaN(age) || age < 1 || age > 120) { alert('正しい年齢を入力してください'); return; }
-  if (!gender) { alert('性別を選択してください'); return; }
+  if (!name)                              { showToast('お名前を入力してください'); return; }
+  if (!age || isNaN(age) || age < 1 || age > 120) { showToast('正しい年齢を入力してください'); return; }
+  if (!gender)                            { showToast('性別を選択してください'); return; }
 
   const btn = document.getElementById('profile-btn');
-  btn.disabled = true;
+  btn.disabled    = true;
   btn.textContent = '登録中...';
 
   try {
@@ -404,18 +527,18 @@ async function submitProfile() {
         loadEvents();
       }
     } else {
-      alert('登録に失敗しました: ' + (data.message || '不明なエラー'));
-      btn.disabled = false;
+      showToast('登録に失敗しました: ' + (data.message || '不明なエラー'));
+      btn.disabled    = false;
       btn.textContent = '次へ';
     }
-  } catch(e) {
-    alert('通信エラー: ' + e.message);
-    btn.disabled = false;
+  } catch (e) {
+    showToast('通信エラー: ' + e.message);
+    btn.disabled    = false;
     btn.textContent = '次へ';
   }
 }
 
-// ── イベント一覧 ──────────────────────────────
+// ── イベント一覧 ──────────────────────────────────────────
 async function loadEvents(filterEventId) {
   showScreen('loading');
   setLoadingMsg('イベントを読み込み中...');
@@ -423,7 +546,7 @@ async function loadEvents(filterEventId) {
   try {
     const data = await jsonp({ action: 'getEvents', userId: state.userId });
     renderEvents(data.events || [], filterEventId);
-  } catch(e) {
+  } catch (e) {
     showError('イベントの取得に失敗しました: ' + e.message);
   }
 }
@@ -442,15 +565,15 @@ function renderEvents(events, filterEventId) {
   list.innerHTML = '';
 
   events.forEach(ev => {
-    const btn = document.createElement('button');
-    btn.className = 'event-btn';
+    const btn       = document.createElement('button');
+    btn.className   = 'event-btn';
 
     if (ev.alreadyBooked) {
-      btn.disabled = true;
-      btn.innerHTML = `${escHtml(ev.name)}<div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
+      btn.disabled   = true;
+      btn.innerHTML  = `${escHtml(ev.name)}<div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
     } else {
-      btn.innerHTML = `${escHtml(ev.name)}<div class="sub">${escHtml(ev.description || '')}</div>`;
-      btn.onclick = () => loadSchedules(ev);
+      btn.innerHTML  = `${escHtml(ev.name)}<div class="sub">${escHtml(ev.description || '')}</div>`;
+      btn.onclick    = () => loadSchedules(ev);
     }
     list.appendChild(btn);
   });
@@ -459,68 +582,121 @@ function renderEvents(events, filterEventId) {
   showScreen('event');
 }
 
-// ── 日程一覧 ──────────────────────────────────
+// ── 日程一覧 ──────────────────────────────────────────────
 async function loadSchedules(ev) {
   state.selectedEvent = ev;
   showScreen('loading');
   setLoadingMsg('日程を読み込み中...');
+  stopSchedRefresh(); // 既存タイマーをリセット
 
   try {
     const data = await jsonp({ action: 'getSchedules', eventId: ev.id, userId: state.userId });
-
-    document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
-    document.getElementById('sched-back-btn').onclick =
-      state.changingReservationId
-        ? () => loadMyReservations()   // 変更フロー → 予約一覧へ
-        : () => showScreen('event');   // 新規フロー → イベント一覧へ
-
-    const list = document.getElementById('sched-list');
-    list.innerHTML = '';
-
-    if (!data.schedules || data.schedules.length === 0) {
-      list.innerHTML = '<p style="color:#9ca3af;font-size:13px;padding:8px 0;">受付中の日程がありません</p>';
-    } else {
-      data.schedules.forEach(s => {
-        const btn = document.createElement('button');
-
-        if (s.alreadyBooked) {
-          btn.className = 'sched-btn already';
-          btn.innerHTML = `
-            <span class="sched-badge badge-already">申込済み</span>
-            <div class="date">${escHtml(s.datetime)}</div>
-            <div class="info">📍 ${escHtml(s.location)}</div>`;
-        } else if (s.remaining <= 0) {
-          btn.className = 'sched-btn full';
-          btn.innerHTML = `
-            <span class="sched-badge badge-full">満席</span>
-            <div class="date">${escHtml(s.datetime)}</div>
-            <div class="info">📍 ${escHtml(s.location)}</div>`;
-        } else {
-          btn.className = 'sched-btn';
-          const remainLabel = s.remaining <= 3
-            ? `<span style="color:#ef4444;">残り${s.remaining}人</span>`
-            : `残り${s.remaining}人`;
-          btn.innerHTML = `
-            <span class="sched-badge badge-ok">${remainLabel}</span>
-            <div class="date">${escHtml(s.datetime)}</div>
-            <div class="info">📍 ${escHtml(s.location)}</div>`;
-          btn.onclick = () => showConfirm(s);
-        }
-        list.appendChild(btn);
-      });
-    }
-    showScreen('sched');
-  } catch(e) {
+    renderSchedules(data.schedules || [], ev);
+  } catch (e) {
     showError('日程の取得に失敗しました: ' + e.message);
   }
 }
 
-// ── 予約確認画面 ──────────────────────────────
-// キャッシュ済みuserInfoを使い、余分なAPI呼び出しを削除
+function renderSchedules(schedules, ev) {
+  document.getElementById('sched-title').textContent =
+    (ev || state.selectedEvent).name + ' の日程を選択';
+
+  document.getElementById('sched-back-btn').onclick =
+    state.changingReservationId
+      ? () => loadMyReservations()
+      : () => showScreen('event');
+
+  const list = document.getElementById('sched-list');
+  list.innerHTML = '';
+
+  if (!schedules || schedules.length === 0) {
+    list.innerHTML = '<p style="color:#9ca3af;font-size:13px;padding:8px 0;">受付中の日程がありません</p>';
+  } else {
+    schedules.forEach(s => {
+      const btn = document.createElement('button');
+
+      if (s.alreadyBooked) {
+        btn.className = 'sched-btn already';
+        btn.innerHTML = `
+          <span class="sched-badge badge-already">申込済み</span>
+          <div class="date">${escHtml(s.datetime)}</div>
+          <div class="info">📍 ${escHtml(s.location)}</div>`;
+      } else if (s.remaining <= 0) {
+        btn.className = 'sched-btn full';
+        btn.innerHTML = `
+          <span class="sched-badge badge-full">満席</span>
+          <div class="date">${escHtml(s.datetime)}</div>
+          <div class="info">📍 ${escHtml(s.location)}</div>`;
+      } else {
+        btn.className = 'sched-btn';
+        const remainLabel = s.remaining <= 3
+          ? `<span style="color:#ef4444;">残り${s.remaining}人</span>`
+          : `残り${s.remaining}人`;
+        btn.innerHTML = `
+          <span class="sched-badge badge-ok">${remainLabel}</span>
+          <div class="date">${escHtml(s.datetime)}</div>
+          <div class="info">📍 ${escHtml(s.location)}</div>`;
+        btn.onclick = () => showConfirm(s);
+      }
+      list.appendChild(btn);
+    });
+  }
+  showScreen('sched');
+  startSchedRefresh(); // 30秒ごとに残席を自動更新
+}
+
+// ── 残席自動更新 ──────────────────────────────────────────
+function startSchedRefresh() {
+  stopSchedRefresh();
+  updateRefreshLabel();
+  state.schedRefreshTimer = setInterval(() => {
+    if (state.currentScreen !== 'sched') { stopSchedRefresh(); return; }
+    refreshSchedView(true); // silent=true
+  }, 30000);
+}
+
+function stopSchedRefresh() {
+  if (state.schedRefreshTimer) {
+    clearInterval(state.schedRefreshTimer);
+    state.schedRefreshTimer = null;
+  }
+}
+
+async function refreshSchedView(silent = false) {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '更新中...'; }
+
+  try {
+    const data = await jsonp({
+      action: 'getSchedules',
+      eventId: state.selectedEvent.id,
+      userId:  state.userId,
+    });
+    renderSchedules(data.schedules || [], state.selectedEvent);
+    if (!silent) showToast('残席数を更新しました');
+  } catch (e) {
+    if (!silent) showToast('更新に失敗しました');
+  } finally {
+    updateRefreshLabel();
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 更新'; }
+  }
+}
+
+function updateRefreshLabel() {
+  const label = document.getElementById('refresh-label');
+  if (label) {
+    const now = new Date();
+    const h   = String(now.getHours()).padStart(2, '0');
+    const m   = String(now.getMinutes()).padStart(2, '0');
+    label.textContent = `${h}:${m} 時点の残席数`;
+  }
+}
+
+// ── 予約確認画面 ──────────────────────────────────────────
 function showConfirm(sched) {
   state.selectedSched = sched;
-
   const info = state.userInfo || {};
+
   document.getElementById('confirm-detail').innerHTML = `
     <div class="confirm-row">
       <div class="confirm-label">お名前</div>
@@ -547,19 +723,19 @@ function showConfirm(sched) {
       <div class="confirm-val">📍 ${escHtml(sched.location)}</div>
     </div>`;
 
-  const confirmBtn = document.getElementById('confirm-btn');
-  confirmBtn.disabled = false;
-  confirmBtn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
+  const confirmBtn        = document.getElementById('confirm-btn');
+  confirmBtn.disabled     = false;
+  confirmBtn.textContent  = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
   showScreen('confirm');
 }
 
-// ── 予約送信（二重送信防止つき）────────────────
+// ── 予約送信（二重送信防止） ──────────────────────────────
 async function submitReservation() {
-  if (state.submitting) return; // 二重送信防止
+  if (state.submitting) return;
   state.submitting = true;
 
   const btn = document.getElementById('confirm-btn');
-  btn.disabled = true;
+  btn.disabled    = true;
   btn.textContent = '処理中...';
 
   try {
@@ -590,40 +766,42 @@ async function submitReservation() {
       const doneBtn    = document.getElementById('done-btn');
       const doneBtnSub = document.getElementById('done-btn-sub');
       if (isChange) {
-        doneBtn.textContent = '予約一覧を見る';
-        doneBtn.onclick = () => loadMyReservations();
+        doneBtn.textContent  = '予約一覧を見る';
+        doneBtn.onclick      = () => loadMyReservations();
         doneBtnSub.style.display = 'block';
-        doneBtnSub.textContent = '閉じる';
-        doneBtnSub.onclick = () => safeClose();
+        doneBtnSub.textContent   = '閉じる';
+        doneBtnSub.onclick       = () => safeClose();
       } else {
-        doneBtn.textContent = '閉じる';
-        doneBtn.onclick = () => safeClose();
+        doneBtn.textContent  = '閉じる';
+        doneBtn.onclick      = () => safeClose();
         doneBtnSub.style.display = 'none';
       }
-      state.changingReservationId = null;  // ボタン判定後にリセット
+      state.changingReservationId = null; // ボタン判定後にリセット
       showScreen('done');
+
     } else {
-      alert(data.message || '処理に失敗しました');
-      btn.disabled = false;
+      // 満席など業務エラーはトーストで表示
+      showToast(data.message || '処理に失敗しました');
+      btn.disabled    = false;
       btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
     }
-  } catch(e) {
-    alert('通信エラー: ' + e.message);
-    btn.disabled = false;
+  } catch (e) {
+    showToast('通信エラー: ' + e.message);
+    btn.disabled    = false;
     btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
   } finally {
     state.submitting = false;
   }
 }
 
-// ── 予約一覧 ──────────────────────────────────
+// ── 予約一覧 ──────────────────────────────────────────────
 async function loadMyReservations() {
   showScreen('loading');
   setLoadingMsg('予約を読み込み中...');
   try {
     const data = await jsonp({ action: 'getMyReservations', userId: state.userId });
     renderMyReservations(data.reservations || []);
-  } catch(e) {
+  } catch (e) {
     showError('予約情報の取得に失敗しました: ' + e.message);
   }
 }
@@ -645,8 +823,14 @@ function renderMyReservations(reservations) {
           📍 ${escHtml(r.location)}
         </div>
         <div class="rsv-actions">
-          <button class="btn-green" onclick="startChange('${escHtml(r.reservationId)}','${escHtml(r.eventId)}','${escHtml(r.eventName)}')">日程変更</button>
-          <button class="btn-red" onclick="confirmCancel('${escHtml(r.reservationId)}')">キャンセル</button>
+          <button class="btn-green"
+            onclick="startChange('${escAttr(r.reservationId)}','${escAttr(r.eventId)}','${escAttr(r.eventName)}')">
+            日程変更
+          </button>
+          <button class="btn-red"
+            onclick="confirmCancel('${escAttr(r.reservationId)}')">
+            キャンセル
+          </button>
         </div>
       </div>
     `).join('');
@@ -654,10 +838,23 @@ function renderMyReservations(reservations) {
   showScreen('myrsv');
 }
 
-// ── キャンセル ────────────────────────────────
+// ── キャンセル（カスタムモーダル） ───────────────────────
 function confirmCancel(reservationId) {
-  if (!confirm('この予約をキャンセルしてよろしいですか？\n\nキャンセル後の取り消しはできません。')) return;
-  doCancel(reservationId);
+  const modal  = document.getElementById('modal-cancel');
+  modal.classList.add('active');
+
+  document.getElementById('modal-cancel-ok').onclick = () => {
+    modal.classList.remove('active');
+    doCancel(reservationId);
+  };
+  document.getElementById('modal-cancel-ng').onclick = () => {
+    modal.classList.remove('active');
+  };
+
+  // モーダル外タップで閉じる
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.remove('active');
+  };
 }
 
 async function doCancel(reservationId) {
@@ -668,36 +865,32 @@ async function doCancel(reservationId) {
     if (data.status === 'ok') {
       showScreen('cancelled');
     } else {
-      alert(data.message || 'キャンセルに失敗しました');
+      showToast(data.message || 'キャンセルに失敗しました');
       loadMyReservations();
     }
-  } catch(e) {
-    alert('通信エラー: ' + e.message);
+  } catch (e) {
+    showToast('通信エラー: ' + e.message);
     loadMyReservations();
   }
 }
 
-// ── 日程変更 ──────────────────────────────────
-function cancelChange() {
-  // 変更フローをリセットして予約一覧へ戻る
-  state.changingReservationId = null;
-  state.changingEventId = null;
-  loadMyReservations();
-}
-
+// ── 日程変更 ──────────────────────────────────────────────
 function startChange(reservationId, eventId, eventName) {
   state.changingReservationId = reservationId;
-  state.changingEventId = eventId;
-  // イベント選択をスキップして直接日程一覧へ
+  state.changingEventId       = eventId;
   loadSchedules({ id: eventId, name: eventName });
 }
 
-// ── ユーティリティ ─────────────────────────────
+// ── ユーティリティ ─────────────────────────────────────────
 function showScreen(name) {
   ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled'].forEach(s => {
     const el = document.getElementById('s-' + s);
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
+  state.currentScreen = name;
+
+  // 日程画面から離れたらタイマー停止
+  if (name !== 'sched') stopSchedRefresh();
 }
 
 function setLoadingMsg(msg) {
@@ -710,7 +903,17 @@ function showError(msg) {
   showScreen('error');
 }
 
-// XSS対策: HTMLエスケープ
+// ── Toast通知 ─────────────────────────────────────────────
+let toastTimer = null;
+function showToast(msg, duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// XSS対策: HTMLエスケープ（innerHTML用）
 function escHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -720,9 +923,20 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// XSS対策: onclick属性のシングルクォート内で使う値用エスケープ
+function escAttr(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // liff.closeWindow() のラッパー（エラー対策）
 function safeClose() {
-  try { liff.closeWindow(); } catch(e) { window.close(); }
+  try { liff.closeWindow(); } catch (e) { window.close(); }
 }
 </script>
 </body>
