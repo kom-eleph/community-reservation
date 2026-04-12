@@ -2,12 +2,15 @@
 // config.gs  ★ここだけ自分の値に書き換える
 // ============================================================
 
-const SPREADSHEET_ID         = 'hogehoge';
+const SPREADSHEET_ID            = 'hogehoge';
 const LINE_CHANNEL_ACCESS_TOKEN = 'hogehoge';
-const LINE_CHANNEL_SECRET    = 'hogehoge';
+const LINE_CHANNEL_SECRET       = 'hogehoge';
 
 // 管理者通知用LINEユーザーID（任意。不要なら空文字 '' のまま）
 const ADMIN_LINE_USER_ID = '';
+
+// デバッグフラグ（本番運用時は false にしてログ量を削減）
+const DEBUG = false;
 
 // シート名（変更しないこと）
 const SHEET = {
@@ -17,7 +20,7 @@ const SHEET = {
   RESERVE:  '予約シート',
   USER:     'ユーザーシート',
   SESSION:  'セッションシート',
-  WAITLIST: 'キャンセル待ちシート',  // 追加
+  WAITLIST: 'キャンセル待ちシート',
 };
 
 // セッションState定数
@@ -41,7 +44,7 @@ function getSheet(name) {
 function getAllRows(sheetName) {
   const sheet = getSheet(sheetName);
   if (!sheet) {
-    Logger.log('シートが見つかりません: ' + sheetName);
+    debugLog('シートが見つかりません: ' + sheetName);
     return [];
   }
   const values = sheet.getDataRange().getValues();
@@ -54,10 +57,9 @@ function findRowIndex(sheetName, colIndex, value) {
   return rows.findIndex(r => r[colIndex] === value);
 }
 
-// 修正: 行数ベースの採番から日付+ランダムの採番に変更
-// 行数+1は削除・変更後に重複しうるため
+// ランダム+日付ベースのユニークID生成（行数ベースは削除・変更後に重複しうるため非推奨）
 function generateUniqueId(prefix, sheetName) {
-  const dateStr  = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  const dateStr   = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
   const randomStr = Math.random().toString(36).substr(2, 5).toUpperCase();
   const candidate = `${prefix}-${dateStr}-${randomStr}`;
 
@@ -71,12 +73,17 @@ function generateUniqueId(prefix, sheetName) {
 
 // 後方互換のためgenerateIdも残す（非推奨）
 function generateId(prefix, sheetName) {
-  Logger.log('[WARN] generateId() is deprecated. Use generateUniqueId()');
+  debugLog('[WARN] generateId() is deprecated. Use generateUniqueId()');
   return generateUniqueId(prefix, sheetName);
 }
 
 function now() {
   return new Date();
+}
+
+// デバッグログ（DEBUG=falseのときは何もしない）
+function debugLog(msg) {
+  if (DEBUG) Logger.log(msg);
 }
 
 // ── 接続確認用 ────────────────────────────────────────────

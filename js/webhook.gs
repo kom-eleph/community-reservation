@@ -7,8 +7,8 @@ function doGet(e) {
   const callback = e.parameter.callback;
   let result     = { status: 'error', message: 'unknown action' };
 
-  // 全リクエストをログに記録（デバッグ用）
-  Logger.log(`doGet action=${action} userId=${e.parameter.userId || '(none)'}`);
+  // DEBUGフラグが true のときのみログ記録（本番ログ量削減）
+  debugLog(`doGet action=${action} userId=${e.parameter.userId || '(none)'}`);
 
   try {
     switch (action) {
@@ -51,7 +51,7 @@ function doGet(e) {
         result = getInitialData(e.parameter.userId);
         break;
       case 'getEventStats':
-        // 管理者向け（本番ではAdmin用パスワードの確認を追加推奨）
+        // 管理者向け（本番ではパスワード確認などの追加を推奨）
         result = getEventStats(e.parameter.eventId);
         break;
       case 'joinWaitlist':
@@ -60,7 +60,8 @@ function doGet(e) {
       default:
         result = { status: 'error', message: 'unknown action: ' + action };
     }
-  } catch(err) {
+  } catch (err) {
+    // エラーは常にログ記録（DEBUGフラグ不問）
     Logger.log(`[ERROR] action=${action} message=${err.message}\n${err.stack}`);
     result = { status: 'error', message: 'サーバーエラーが発生しました。しばらく時間をおいて再度お試しください。' };
   }
@@ -108,7 +109,7 @@ function handleEvent(event) {
   const text       = event.message.text.trim();
   const replyToken = event.replyToken;
 
-  Logger.log(`handleEvent userId=${userId} text=${text}`);
+  debugLog(`handleEvent userId=${userId} text=${text}`);
 
   const session = getSession(userId);
   const state   = session ? session.state : STATE.IDLE;
@@ -151,7 +152,7 @@ function replyText(replyToken, text) {
 // ── ウォームアップ（毎時トリガー推奨） ───────────────────
 function keepAlive() {
   getSheet(SHEET.SESSION);
-  Logger.log('keepAlive: ' + new Date());
+  debugLog('keepAlive: ' + new Date());
 }
 
 // ── テスト関数 ────────────────────────────────────────────

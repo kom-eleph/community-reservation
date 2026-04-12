@@ -4,13 +4,13 @@
 
 // ── イベント一覧取得 ──────────────────────────────────────
 function getAvailableEvents(userId) {
-  const now      = new Date();
+  const nowDate  = new Date();
   const events   = getAllRows(SHEET.EVENT).filter(r => r[4] === true);
   const scheds   = getAllRows(SHEET.SCHED);
   const reserves = getAllRows(SHEET.RESERVE);
 
   const activeScheds = scheds.filter(
-    s => now >= new Date(s[3]) && now <= new Date(s[4])
+    s => nowDate >= new Date(s[3]) && nowDate <= new Date(s[4])
   );
   const activeIds = new Set(activeScheds.map(s => s[1]));
 
@@ -20,8 +20,7 @@ function getAvailableEvents(userId) {
       .map(e => {
         const eventScheds = activeScheds.filter(s => s[1] === e[0]);
 
-        // イベントの全日程に予約済みの場合のみ「申込済み」としてボタン無効化
-        // 個別日程の申込済み判定は getSchedulesByEvent() の alreadyBooked で行う
+        // 全日程に予約済みの場合のみ「申込済み」としてボタン無効化
         const alreadyBooked = userId
           ? eventScheds.length > 0 && eventScheds.every(s =>
               reserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
@@ -41,7 +40,7 @@ function getAvailableEvents(userId) {
 
 // ── 日程一覧取得 ──────────────────────────────────────────
 function getSchedulesByEvent(eventId, userId) {
-  const now      = new Date();
+  const nowDate  = new Date();
   const events   = getAllRows(SHEET.EVENT);
   const scheds   = getAllRows(SHEET.SCHED);
   const reserves = getAllRows(SHEET.RESERVE);
@@ -49,8 +48,8 @@ function getSchedulesByEvent(eventId, userId) {
 
   const available = scheds.filter(s =>
     s[1] === eventId &&
-    now >= new Date(s[3]) &&
-    now <= new Date(s[4])
+    nowDate >= new Date(s[3]) &&
+    nowDate <= new Date(s[4])
   );
 
   return {
@@ -63,11 +62,11 @@ function getSchedulesByEvent(eventId, userId) {
         ? reserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
         : false;
       return {
-        schedId:  s[0],
-        datetime: Utilities.formatDate(new Date(s[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'),
-        location: s[6],
+        schedId:      s[0],
+        datetime:     Utilities.formatDate(new Date(s[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'),
+        location:     s[6],
         capacity,
-        remaining:     capacity - booked,
+        remaining:    capacity - booked,
         alreadyBooked,
       };
     })
@@ -120,7 +119,7 @@ function cancelReservationById(userId, reservationId) {
     const idx   = rows.findIndex(
       (r, i) => i > 0 &&
         r[0] === reservationId &&
-        r[1] === userId &&         // userIdを検証してなりすまし防止
+        r[1] === userId &&       // userIdを検証してなりすまし防止
         r[3] === '予約中'
     );
     if (idx === -1) {
@@ -129,7 +128,6 @@ function cancelReservationById(userId, reservationId) {
     sheet.getRange(idx + 1, 4).setValue('キャンセル');
     sheet.getRange(idx + 1, 6).setValue(now()); // キャンセル日時を記録
 
-    // 管理者通知（ADMIN_LINE_USER_IDが設定されている場合）
     notifyAdminOnCancel(reservationId, userId);
 
     return { status: 'ok' };
@@ -146,6 +144,7 @@ function processReservation(userId, schedId, name) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
+    // ロック取得後に最新データを取得（競合防止）
     const reserves = getAllRows(SHEET.RESERVE);
     const scheds   = getAllRows(SHEET.SCHED);
     const events   = getAllRows(SHEET.EVENT);
@@ -169,7 +168,6 @@ function processReservation(userId, schedId, name) {
       return { status: 'error', message: 'この日程は満席です。' };
     }
 
-    // 修正: 重複しないユニークIDを生成
     const reservationId = generateUniqueId('RSV', SHEET.RESERVE);
     getSheet(SHEET.RESERVE).appendRow([
       reservationId, userId, schedId, '予約中', now(), ''
@@ -186,7 +184,6 @@ function registerUser(userId, name, age, gender) {
   if (!userId || !name || !age || !gender) {
     return { status: 'error', message: '必要なパラメータが不足しています。' };
   }
-  // バリデーション
   const ageNum = parseInt(age, 10);
   if (isNaN(ageNum) || ageNum < 1 || ageNum > 120) {
     return { status: 'error', message: '正しい年齢を入力してください。' };
@@ -231,6 +228,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
+    // ロック取得後に最新データを取得（競合防止）
     const reserves = getAllRows(SHEET.RESERVE);
     const scheds   = getAllRows(SHEET.SCHED);
     const events   = getAllRows(SHEET.EVENT);
@@ -277,23 +275,74 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
   }
 }
 
-// ── 初回データ一括取得 ────────────────────────────────────
+// ── 初回データ一括取得（シート読み込みを最小化） ──────────
+// 各関数が個別にgetAllRowsを呼ぶ実装から、
+// スプレッドシートへのアクセス回数を減らすよう一括処理
 function getInitialData(userId) {
   if (!userId) return { status: 'error', message: 'userIdが必要です。' };
 
-  const userInfo   = getUserInfo(userId);
-  const eventsData = getAvailableEvents(userId);
-  const myRsvData  = getMyReservations(userId);
+  // 全シートデータを一括取得（I/O回数削減）
+  const allEvents   = getAllRows(SHEET.EVENT);
+  const allScheds   = getAllRows(SHEET.SCHED);
+  const allReserves = getAllRows(SHEET.RESERVE);
+  const allUsers    = getAllRows(SHEET.USER);
+
+  // ユーザー情報
+  const userRow = allUsers.find(r => r[0] === userId);
+  const userInfo = userRow
+    ? { status: 'found', name: userRow[1], age: userRow[2], gender: userRow[3] }
+    : { status: 'none' };
+
+  // イベント一覧
+  const nowDate      = new Date();
+  const activeScheds = allScheds.filter(
+    s => nowDate >= new Date(s[3]) && nowDate <= new Date(s[4])
+  );
+  const activeIds = new Set(activeScheds.map(s => s[1]));
+  const events = allEvents
+    .filter(e => e[4] === true && activeIds.has(e[0]))
+    .map(e => {
+      const eventScheds   = activeScheds.filter(s => s[1] === e[0]);
+      const alreadyBooked = eventScheds.length > 0 && eventScheds.every(s =>
+        allReserves.some(r => r[1] === userId && r[2] === s[0] && r[3] === '予約中')
+      );
+      return {
+        id:           e[0],
+        name:         e[1],
+        description:  e[2],
+        capacity:     e[3],
+        alreadyBooked,
+      };
+    });
+
+  // 自分の予約
+  const evtMap   = new Map(allEvents.map(e => [e[0], e]));
+  const schedMap = new Map(allScheds.map(s => [s[0], s]));
+  const activeRsv = allReserves.filter(r => r[1] === userId && r[3] === '予約中');
+  const reservations = activeRsv.map(r => {
+    const sched = schedMap.get(r[2]);
+    const evt   = evtMap.get(sched?.[1]);
+    return {
+      reservationId: r[0],
+      schedId:       r[2],
+      eventId:       sched?.[1] || '',
+      eventName:     evt?.[1]   || '(不明なイベント)',
+      datetime:      sched ? Utilities.formatDate(
+        new Date(sched[2]), 'Asia/Tokyo', 'M月d日(E) HH:mm'
+      ) : '',
+      location: sched?.[6] || '',
+    };
+  });
+
   return {
     status:       'ok',
-    userInfo:     userInfo,
-    events:       eventsData.events || [],
-    reservations: myRsvData.reservations || [],
+    userInfo,
+    events,
+    reservations,
   };
 }
 
 // ── イベント属性統計（管理者用） ──────────────────────────
-// 使用例: getEventStats('EVT-0001')
 function getEventStats(eventId) {
   const reserves = getAllRows(SHEET.RESERVE);
   const scheds   = getAllRows(SHEET.SCHED);
@@ -308,8 +357,7 @@ function getEventStats(eventId) {
     r => targetScheds.includes(r[2]) && (r[3] === '予約中' || r[3] === '変更済')
   );
 
-  const userMap = new Map(users.map(u => [u[0], u]));
-
+  const userMap   = new Map(users.map(u => [u[0], u]));
   const genderCount = {};
   const ageGroups   = { '10代': 0, '20代': 0, '30代': 0, '40代': 0, '50代以上': 0, '不明': 0 };
 
@@ -321,12 +369,12 @@ function getEventStats(eventId) {
     genderCount[gender] = (genderCount[gender] || 0) + 1;
 
     const age = parseInt(user[2], 10);
-    if      (isNaN(age))  ageGroups['不明']++;
-    else if (age < 20)    ageGroups['10代']++;
-    else if (age < 30)    ageGroups['20代']++;
-    else if (age < 40)    ageGroups['30代']++;
-    else if (age < 50)    ageGroups['40代']++;
-    else                  ageGroups['50代以上']++;
+    if      (isNaN(age)) ageGroups['不明']++;
+    else if (age < 20)   ageGroups['10代']++;
+    else if (age < 30)   ageGroups['20代']++;
+    else if (age < 40)   ageGroups['30代']++;
+    else if (age < 50)   ageGroups['40代']++;
+    else                 ageGroups['50代以上']++;
   });
 
   const eventName = events.find(e => e[0] === eventId)?.[1] || '全イベント';
@@ -364,7 +412,6 @@ function joinWaitlist(userId, schedId) {
 
 // ── 管理者へのキャンセル通知（任意） ─────────────────────
 function notifyAdminOnCancel(reservationId, userId) {
-  // ADMIN_LINE_USER_ID が設定されていれば管理者にpush通知
   if (typeof ADMIN_LINE_USER_ID === 'undefined' || !ADMIN_LINE_USER_ID) return;
   try {
     const url = 'https://api.line.me/v2/bot/message/push';
@@ -384,7 +431,7 @@ function notifyAdminOnCancel(reservationId, userId) {
       muteHttpExceptions: true,
     };
     UrlFetchApp.fetch(url, options);
-  } catch(e) {
+  } catch (e) {
     Logger.log('管理者通知失敗: ' + e.message);
   }
 }

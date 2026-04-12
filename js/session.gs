@@ -18,9 +18,9 @@ function setSession(userId, state, tmpData) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    const sheet = getSheet(SHEET.SESSION);
-    const rows  = sheet.getDataRange().getValues();
-    const idx   = rows.findIndex((r, i) => i > 0 && r[0] === userId);
+    const sheet   = getSheet(SHEET.SESSION);
+    const rows    = sheet.getDataRange().getValues();
+    const idx     = rows.findIndex((r, i) => i > 0 && r[0] === userId);
     const payload = [userId, state, JSON.stringify(tmpData), now()];
 
     if (idx > 0) {
