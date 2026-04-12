@@ -453,12 +453,7 @@ function renderEvents(events, filterEventId) {
     list.appendChild(btn);
   });
 
-  // フィルター時に1件のみ且つ未申込なら即日程へ
-  if (filterEventId && events.length === 1 && !events[0].alreadyBooked) {
-    loadSchedules(events[0]);
-  } else {
-    showScreen('event');
-  }
+  showScreen('event');
 }
 
 // ── 日程一覧 ──────────────────────────────────
@@ -472,9 +467,9 @@ async function loadSchedules(ev) {
 
     document.getElementById('sched-title').textContent = ev.name + ' の日程を選択';
     document.getElementById('sched-back-btn').onclick =
-      state.changeFromEventId
-        ? () => loadEvents(state.changeFromEventId)
-        : () => showScreen('event');
+      state.changingReservationId
+        ? () => loadMyReservations()   // 変更フロー → 予約一覧へ
+        : () => showScreen('event');   // 新規フロー → イベント一覧へ
 
     const list = document.getElementById('sched-list');
     list.innerHTML = '';
