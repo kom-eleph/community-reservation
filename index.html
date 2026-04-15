@@ -94,9 +94,11 @@
     position: relative;
     font-family: inherit;
   }
-  .sched-btn:hover:not(.full):not(.already) { border-color: #06C755; background: #f0fdf4; }
-  .sched-btn.full { opacity: .5; cursor: default; }
+  .sched-btn:hover:not(.full):not(.already):not(.waitlisted) { border-color: #06C755; background: #f0fdf4; }
+  .sched-btn.full { cursor: pointer; background: #fff; }
+  .sched-btn.full:hover { border-color: #f97316; background: #fff7ed; }
   .sched-btn.already { opacity: .7; cursor: default; background: #f0f9ff; border-color: #bfdbfe; }
+  .sched-btn.waitlisted { opacity: .7; cursor: default; background: #fefce8; border-color: #fde68a; }
   .sched-btn .date { font-weight: 600; color: #111827; font-size: 15px; }
   .sched-btn.full .date { color: #9ca3af; }
   .sched-btn .info { font-size: 12px; color: #6b7280; margin-top: 3px; }
@@ -104,9 +106,15 @@
     position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
     font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px;
   }
-  .badge-ok { background: #dcfce7; color: #16a34a; }
-  .badge-full { background: #f3f4f6; color: #9ca3af; }
-  .badge-already { background: #eff6ff; color: #3b82f6; }
+  .badge-ok       { background: #dcfce7; color: #16a34a; }
+  .badge-full     { background: #fff7ed; color: #c2410c; }
+  .badge-already  { background: #eff6ff; color: #3b82f6; }
+  .badge-waitlist { background: #fefce8; color: #92400e; }
+
+  /* 満席時のキャンセル待ち案内テキスト */
+  .sched-btn.full .waitlist-hint {
+    font-size: 11px; color: #f97316; margin-top: 4px;
+  }
 
   .btn-green {
     display: block; width: 100%; padding: 15px;
@@ -121,6 +129,18 @@
   .btn-green:hover:not(:disabled) { background: #04a847; }
   .btn-green:active:not(:disabled) { transform: scale(.99); }
   .btn-green:disabled { opacity: .5; cursor: default; }
+
+  .btn-orange {
+    display: block; width: 100%; padding: 15px;
+    background: #f97316; color: #fff;
+    border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 700;
+    cursor: pointer;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .btn-orange:hover:not(:disabled) { background: #ea6c0a; }
+  .btn-orange:disabled { opacity: .5; cursor: default; }
 
   .btn-gray {
     display: block; width: 100%; padding: 13px;
@@ -220,7 +240,7 @@
   }
   .refresh-bar button:disabled { color: #9ca3af; cursor: default; }
 
-  /* ── カスタムモーダル ── */
+  /* ── カスタムモーダル共通 ── */
   .modal-overlay {
     display: none;
     position: fixed; inset: 0;
@@ -247,8 +267,9 @@
   .modal-title { font-size: 18px; font-weight: 700; color: #111827; margin-bottom: 8px; }
   .modal-body  { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 24px; }
   .modal-actions { display: flex; flex-direction: column; gap: 10px; }
-  .modal-actions .btn-red   { margin-top: 0; }
-  .modal-actions .btn-gray  { margin-top: 0; }
+  .modal-actions .btn-red    { margin-top: 0; }
+  .modal-actions .btn-orange { margin-top: 0; }
+  .modal-actions .btn-gray   { margin-top: 0; }
 
   /* ── Screen manager ── */
   .screen { display: none; }
@@ -304,10 +325,9 @@
       </div>
       <div class="form-group">
         <label class="form-label">年齢<span>*</span></label>
-        <!-- inputmode="numeric" でモバイル時テンキー表示 -->
         <input class="form-input" id="inp-age" type="number"
                inputmode="numeric" pattern="[0-9]*"
-               placeholder="例：25" min="1" max="120">
+               placeholder="例：25" id="inp-age-field">
       </div>
       <div class="form-group">
         <label class="form-label">性別<span>*</span></label>
@@ -336,7 +356,6 @@
   <div id="s-sched" class="screen">
     <div class="card">
       <h2 id="sched-title">日程を選択してください</h2>
-      <!-- 残席更新バナー -->
       <div class="refresh-bar" id="refresh-bar">
         <span id="refresh-label">残席数は変動する場合があります</span>
         <button id="refresh-btn" onclick="refreshSchedView()">🔄 更新</button>
@@ -391,9 +410,22 @@
     </div>
   </div>
 
+  <!-- キャンセル待ち完了 -->
+  <div id="s-waitlisted" class="screen">
+    <div class="card">
+      <div class="done-wrap">
+        <div class="done-icon">🔔</div>
+        <div class="done-title">キャンセル待ちに登録しました</div>
+        <div class="done-sub" id="waitlisted-detail">空きが出たらLINEでお知らせします</div>
+        <button class="btn-green" onclick="showScreen('sched')">日程選択に戻る</button>
+        <button class="btn-gray"  onclick="safeClose()">閉じる</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /.container -->
 
-<!-- ── カスタムキャンセル確認モーダル ── -->
+<!-- ── キャンセル確認モーダル ── -->
 <div id="modal-cancel" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-cancel-title">
   <div class="modal-box">
     <div class="modal-icon">🗑️</div>
@@ -409,14 +441,50 @@
   </div>
 </div>
 
+<!-- ── [追加] 満席モーダル ── -->
+<div id="modal-full" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-full-title">
+  <div class="modal-box">
+    <div class="modal-icon">😢</div>
+    <div class="modal-title" id="modal-full-title">この日程は満席です</div>
+    <div class="modal-body" id="modal-full-body">
+      キャンセル待ちに登録すると、空きが出た際にLINEでお知らせします。<br>
+      <span style="font-size:12px; color:#9ca3af;">※先着順のため、確実にご参加いただけるとは限りません</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-orange" id="modal-full-waitlist">🔔 キャンセル待ちに登録する</button>
+      <button class="btn-gray"   id="modal-full-other">別の日程を選ぶ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="toast"></div>
 
 <script>
 'use strict';
 
+// ============================================================
+// アプリ設定定数  ★ここだけ自分の値に書き換える
+// ============================================================
 const LIFF_ID = '2009742773-6qUiijpk';
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNUOUrIzVqoGKx4Rm7AmtTZMxz3XVpDR8DLlr8_qYfi8O36/exec';
+
+// ── 通信・UX タイマー ──────────────────────────────────────
+const CONFIG = {
+  // JSONP タイムアウト (ms)
+  JSONP_TIMEOUT_MS:       20000,
+  // 日程画面の残席自動更新間隔 (ms)
+  SCHED_REFRESH_INTERVAL_MS: 30000,
+  // Toast 通常表示時間 (ms)
+  TOAST_DURATION_MS:       3000,
+  // Toast エラー表示時間 (ms)  ─ 通常より長めに
+  TOAST_ERROR_DURATION_MS: 5000,
+  // 残席「残りわずか」警告の閾値（人数）
+  REMAINING_WARN_THRESHOLD: 3,
+  // ユーザー年齢の入力可能範囲
+  USER_AGE_MIN: 1,
+  USER_AGE_MAX: 120,
+};
 
 // ── アプリ状態 ──────────────────────────────────────────────
 const state = {
@@ -428,20 +496,20 @@ const state = {
   changeFromEventId:     null,
   changingReservationId: null,
   cbCount:               0,
-  submitting:            false,     // 二重送信防止
-  schedRefreshTimer:     null,      // 残席自動更新タイマー
-  currentScreen:         'loading', // 現在表示中の画面名
+  submitting:            false,
+  schedRefreshTimer:     null,
+  currentScreen:         'loading',
 };
 
 // ── JSONP ──────────────────────────────────────────────────
-// _r (ランダム値) を追加してGASキャッシュを確実に回避する
 function jsonp(params) {
   return new Promise((resolve, reject) => {
-    const cbName   = '__cb' + (state.cbCount++);
+    const cbName    = '__cb' + (state.cbCount++);
     const timeoutId = setTimeout(() => {
       cleanup();
-      reject(new Error('タイムアウトしました（20秒）'));
-    }, 20000);
+      // [改善④] タイムアウト時のエラーメッセージを具体的に
+      reject(new Error('TIMEOUT'));
+    }, CONFIG.JSONP_TIMEOUT_MS);
 
     function cleanup() {
       clearTimeout(timeoutId);
@@ -451,21 +519,37 @@ function jsonp(params) {
 
     window[cbName] = (data) => { cleanup(); resolve(data); };
 
-    // キャッシュバスティング: タイムスタンプ + ランダム値
     params.callback = cbName;
     params._t = Date.now();
-    params._r = Math.random().toString(36).substr(2, 9); // ← 追加
+    params._r = Math.random().toString(36).substr(2, 9);
 
     const el = document.createElement('script');
     el.id    = cbName + '_s';
     el.src   = GAS_URL + '?' + new URLSearchParams(params).toString();
-    el.onerror = () => { cleanup(); reject(new Error('通信エラーが発生しました')); };
+    el.onerror = () => { cleanup(); reject(new Error('NETWORK')); };
     document.body.appendChild(el);
   });
 }
 
+// [改善④] エラーメッセージのフォーマット
+function formatError(err) {
+  if (err.message === 'TIMEOUT') {
+    return 'サーバーの応答がありませんでした（20秒）。\nアクセスが集中している可能性があります。\n少し待ってから「再読み込み」をお試しください。';
+  }
+  if (err.message === 'NETWORK') {
+    return '通信エラーが発生しました。\nWi-Fiまたは通信状態を確認してから「再読み込み」をお試しください。';
+  }
+  return err.message;
+}
+
 // ── 初期化 ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // 年齢フィールドの min/max を CONFIG から動的に設定
+  const ageField = document.getElementById('inp-age');
+  if (ageField) {
+    ageField.min = CONFIG.USER_AGE_MIN;
+    ageField.max = CONFIG.USER_AGE_MAX;
+  }
   showScreen('loading');
   setLoadingMsg('起動中...');
 });
@@ -497,7 +581,7 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
       renderEvents(init.events, null);
     }
   } catch (err) {
-    showError('読み込みに失敗しました。\nLINEアプリを再起動してお試しください。\n\n詳細: ' + err.message);
+    showError('読み込みに失敗しました。\n' + formatError(err));
   }
 
 }).catch(err => showError('初期化エラー: ' + err.message));
@@ -509,7 +593,7 @@ async function submitProfile() {
   const gender = document.getElementById('inp-gender').value;
 
   if (!name)                              { showToast('お名前を入力してください'); return; }
-  if (!age || isNaN(age) || age < 1 || age > 120) { showToast('正しい年齢を入力してください'); return; }
+  if (!age || isNaN(age) || age < CONFIG.USER_AGE_MIN || age > CONFIG.USER_AGE_MAX) { showToast('正しい年齢を入力してください'); return; }
   if (!gender)                            { showToast('性別を選択してください'); return; }
 
   const btn = document.getElementById('profile-btn');
@@ -532,7 +616,7 @@ async function submitProfile() {
       btn.textContent = '次へ';
     }
   } catch (e) {
-    showToast('通信エラー: ' + e.message);
+    showToast('通信エラー: ' + formatError(e));
     btn.disabled    = false;
     btn.textContent = '次へ';
   }
@@ -547,7 +631,7 @@ async function loadEvents(filterEventId) {
     const data = await jsonp({ action: 'getEvents', userId: state.userId });
     renderEvents(data.events || [], filterEventId);
   } catch (e) {
-    showError('イベントの取得に失敗しました: ' + e.message);
+    showError('イベントの取得に失敗しました。\n' + formatError(e));
   }
 }
 
@@ -565,15 +649,15 @@ function renderEvents(events, filterEventId) {
   list.innerHTML = '';
 
   events.forEach(ev => {
-    const btn       = document.createElement('button');
-    btn.className   = 'event-btn';
+    const btn     = document.createElement('button');
+    btn.className = 'event-btn';
 
     if (ev.alreadyBooked) {
-      btn.disabled   = true;
-      btn.innerHTML  = `${escHtml(ev.name)}<div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
+      btn.disabled  = true;
+      btn.innerHTML = `${escHtml(ev.name)}<div class="sub">申込済み（変更・取消は「予約確認」から）</div>`;
     } else {
-      btn.innerHTML  = `${escHtml(ev.name)}<div class="sub">${escHtml(ev.description || '')}</div>`;
-      btn.onclick    = () => loadSchedules(ev);
+      btn.innerHTML = `${escHtml(ev.name)}<div class="sub">${escHtml(ev.description || '')}</div>`;
+      btn.onclick   = () => loadSchedules(ev);
     }
     list.appendChild(btn);
   });
@@ -587,13 +671,13 @@ async function loadSchedules(ev) {
   state.selectedEvent = ev;
   showScreen('loading');
   setLoadingMsg('日程を読み込み中...');
-  stopSchedRefresh(); // 既存タイマーをリセット
+  stopSchedRefresh();
 
   try {
     const data = await jsonp({ action: 'getSchedules', eventId: ev.id, userId: state.userId });
     renderSchedules(data.schedules || [], ev);
   } catch (e) {
-    showError('日程の取得に失敗しました: ' + e.message);
+    showError('日程の取得に失敗しました。\n' + formatError(e));
   }
 }
 
@@ -621,15 +705,28 @@ function renderSchedules(schedules, ev) {
           <span class="sched-badge badge-already">申込済み</span>
           <div class="date">${escHtml(s.datetime)}</div>
           <div class="info">📍 ${escHtml(s.location)}</div>`;
+
+      } else if (s.onWaitlist) {
+        // [追加] キャンセル待ち登録済み
+        btn.className = 'sched-btn waitlisted';
+        btn.innerHTML = `
+          <span class="sched-badge badge-waitlist">待機中</span>
+          <div class="date">${escHtml(s.datetime)}</div>
+          <div class="info">📍 ${escHtml(s.location)}</div>`;
+
       } else if (s.remaining <= 0) {
+        // [変更] 満席でもボタンは押せる（キャンセル待ち登録のため）
         btn.className = 'sched-btn full';
         btn.innerHTML = `
           <span class="sched-badge badge-full">満席</span>
           <div class="date">${escHtml(s.datetime)}</div>
-          <div class="info">📍 ${escHtml(s.location)}</div>`;
+          <div class="info">📍 ${escHtml(s.location)}</div>
+          <div class="waitlist-hint">タップしてキャンセル待ちに登録 →</div>`;
+        btn.onclick = () => showFullModal(s);
+
       } else {
         btn.className = 'sched-btn';
-        const remainLabel = s.remaining <= 3
+        const remainLabel = s.remaining <= CONFIG.REMAINING_WARN_THRESHOLD
           ? `<span style="color:#ef4444;">残り${s.remaining}人</span>`
           : `残り${s.remaining}人`;
         btn.innerHTML = `
@@ -642,7 +739,49 @@ function renderSchedules(schedules, ev) {
     });
   }
   showScreen('sched');
-  startSchedRefresh(); // 30秒ごとに残席を自動更新
+  startSchedRefresh();
+}
+
+// ── [追加] 満席モーダル表示 ──────────────────────────────
+function showFullModal(sched) {
+  state.selectedSched = sched;
+  const modal = document.getElementById('modal-full');
+  modal.classList.add('active');
+
+  document.getElementById('modal-full-waitlist').onclick = async () => {
+    modal.classList.remove('active');
+    await doJoinWaitlist(sched.schedId, sched.datetime);
+  };
+  document.getElementById('modal-full-other').onclick = () => {
+    modal.classList.remove('active');
+  };
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.classList.remove('active');
+  };
+}
+
+// ── [追加] キャンセル待ち登録処理 ────────────────────────
+async function doJoinWaitlist(schedId, datetime) {
+  showScreen('loading');
+  setLoadingMsg('キャンセル待ちに登録中...');
+  try {
+    const data = await jsonp({
+      action: 'joinWaitlist',
+      userId: state.userId,
+      schedId,
+    });
+    if (data.status === 'ok') {
+      document.getElementById('waitlisted-detail').textContent =
+        datetime + '\n空きが出たらLINEでお知らせします🔔';
+      showScreen('waitlisted');
+    } else {
+      showToast(data.message || 'キャンセル待ちの登録に失敗しました');
+      showScreen('sched');
+    }
+  } catch (e) {
+    showToast('通信エラー: ' + formatError(e));
+    showScreen('sched');
+  }
 }
 
 // ── 残席自動更新 ──────────────────────────────────────────
@@ -651,8 +790,8 @@ function startSchedRefresh() {
   updateRefreshLabel();
   state.schedRefreshTimer = setInterval(() => {
     if (state.currentScreen !== 'sched') { stopSchedRefresh(); return; }
-    refreshSchedView(true); // silent=true
-  }, 30000);
+    refreshSchedView(true);
+  }, CONFIG.SCHED_REFRESH_INTERVAL_MS);
 }
 
 function stopSchedRefresh() {
@@ -668,14 +807,14 @@ async function refreshSchedView(silent = false) {
 
   try {
     const data = await jsonp({
-      action: 'getSchedules',
+      action:  'getSchedules',
       eventId: state.selectedEvent.id,
       userId:  state.userId,
     });
     renderSchedules(data.schedules || [], state.selectedEvent);
     if (!silent) showToast('残席数を更新しました');
   } catch (e) {
-    if (!silent) showToast('更新に失敗しました');
+    if (!silent) showToast('更新に失敗しました。しばらく待ってから再試行してください');
   } finally {
     updateRefreshLabel();
     if (btn) { btn.disabled = false; btn.textContent = '🔄 更新'; }
@@ -723,9 +862,9 @@ function showConfirm(sched) {
       <div class="confirm-val">📍 ${escHtml(sched.location)}</div>
     </div>`;
 
-  const confirmBtn        = document.getElementById('confirm-btn');
-  confirmBtn.disabled     = false;
-  confirmBtn.textContent  = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
+  const confirmBtn       = document.getElementById('confirm-btn');
+  confirmBtn.disabled    = false;
+  confirmBtn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
   showScreen('confirm');
 }
 
@@ -761,32 +900,46 @@ async function submitReservation() {
       const isChange = !!state.changingReservationId;
       document.getElementById('done-icon').textContent  = isChange ? '🔄' : '✅';
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
-      document.getElementById('done-detail').textContent = '予約ID: ' + data.reservationId;
+      document.getElementById('done-detail').textContent =
+        '予約ID: ' + data.reservationId + '\n予約内容をLINEに送信しました📩';
 
       const doneBtn    = document.getElementById('done-btn');
       const doneBtnSub = document.getElementById('done-btn-sub');
       if (isChange) {
-        doneBtn.textContent  = '予約一覧を見る';
-        doneBtn.onclick      = () => loadMyReservations();
+        doneBtn.textContent      = '予約一覧を見る';
+        doneBtn.onclick          = () => loadMyReservations();
         doneBtnSub.style.display = 'block';
         doneBtnSub.textContent   = '閉じる';
         doneBtnSub.onclick       = () => safeClose();
       } else {
-        doneBtn.textContent  = '閉じる';
-        doneBtn.onclick      = () => safeClose();
+        doneBtn.textContent      = '閉じる';
+        doneBtn.onclick          = () => safeClose();
         doneBtnSub.style.display = 'none';
       }
-      state.changingReservationId = null; // ボタン判定後にリセット
+      state.changingReservationId = null;
       showScreen('done');
 
+    } else if (data.status === 'full') {
+      // [改善③] 満席エラーはモーダルで表示し、キャンセル待ちへ誘導
+      btn.disabled    = false;
+      btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
+      showFullModal(state.selectedSched);
+
     } else {
-      // 満席など業務エラーはトーストで表示
       showToast(data.message || '処理に失敗しました');
       btn.disabled    = false;
       btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
     }
   } catch (e) {
-    showToast('通信エラー: ' + e.message);
+    // [改善④] タイムアウト・ネットワークエラーを丁寧に表示
+    if (e.message === 'TIMEOUT' || e.message === 'NETWORK') {
+      showToast(e.message === 'TIMEOUT'
+        ? 'サーバーの応答がありません。少し待って再度お試しください'
+        : '通信エラーが発生しました。電波状況を確認してください'
+      , CONFIG.TOAST_ERROR_DURATION_MS);
+    } else {
+      showToast('エラー: ' + e.message);
+    }
     btn.disabled    = false;
     btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
   } finally {
@@ -802,7 +955,7 @@ async function loadMyReservations() {
     const data = await jsonp({ action: 'getMyReservations', userId: state.userId });
     renderMyReservations(data.reservations || []);
   } catch (e) {
-    showError('予約情報の取得に失敗しました: ' + e.message);
+    showError('予約情報の取得に失敗しました。\n' + formatError(e));
   }
 }
 
@@ -840,7 +993,7 @@ function renderMyReservations(reservations) {
 
 // ── キャンセル（カスタムモーダル） ───────────────────────
 function confirmCancel(reservationId) {
-  const modal  = document.getElementById('modal-cancel');
+  const modal = document.getElementById('modal-cancel');
   modal.classList.add('active');
 
   document.getElementById('modal-cancel-ok').onclick = () => {
@@ -850,8 +1003,6 @@ function confirmCancel(reservationId) {
   document.getElementById('modal-cancel-ng').onclick = () => {
     modal.classList.remove('active');
   };
-
-  // モーダル外タップで閉じる
   modal.onclick = (e) => {
     if (e.target === modal) modal.classList.remove('active');
   };
@@ -869,7 +1020,7 @@ async function doCancel(reservationId) {
       loadMyReservations();
     }
   } catch (e) {
-    showToast('通信エラー: ' + e.message);
+    showToast('通信エラー: ' + formatError(e));
     loadMyReservations();
   }
 }
@@ -883,13 +1034,11 @@ function startChange(reservationId, eventId, eventName) {
 
 // ── ユーティリティ ─────────────────────────────────────────
 function showScreen(name) {
-  ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled'].forEach(s => {
+  ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled','waitlisted'].forEach(s => {
     const el = document.getElementById('s-' + s);
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
   state.currentScreen = name;
-
-  // 日程画面から離れたらタイマー停止
   if (name !== 'sched') stopSchedRefresh();
 }
 
@@ -903,9 +1052,9 @@ function showError(msg) {
   showScreen('error');
 }
 
-// ── Toast通知 ─────────────────────────────────────────────
+// ── Toast通知（duration指定可能） ────────────────────────
 let toastTimer = null;
-function showToast(msg, duration = 3000) {
+function showToast(msg, duration = CONFIG.TOAST_DURATION_MS) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
@@ -913,7 +1062,6 @@ function showToast(msg, duration = 3000) {
   toastTimer = setTimeout(() => el.classList.remove('show'), duration);
 }
 
-// XSS対策: HTMLエスケープ（innerHTML用）
 function escHtml(str) {
   if (str == null) return '';
   return String(str)
@@ -923,7 +1071,6 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// XSS対策: onclick属性のシングルクォート内で使う値用エスケープ
 function escAttr(str) {
   if (str == null) return '';
   return String(str)
@@ -934,7 +1081,6 @@ function escAttr(str) {
     .replace(/>/g, '&gt;');
 }
 
-// liff.closeWindow() のラッパー（エラー対策）
 function safeClose() {
   try { liff.closeWindow(); } catch (e) { window.close(); }
 }
