@@ -3,24 +3,24 @@
 // ============================================================
 
 function getSession(userId) {
-  const idx = findRowIndex(SHEET.SESSION, 0, userId);
+  const idx = findRowIndex(SHEET.SESSION, COL_SESSION.USER_ID, userId);
   if (idx === -1) return null;
   const row = getAllRows(SHEET.SESSION)[idx];
   return {
-    userId:  row[0],
-    state:   row[1],
-    tmpData: row[2] ? JSON.parse(row[2]) : {},
-    updated: row[3],
+    userId:  row[COL_SESSION.USER_ID],
+    state:   row[COL_SESSION.STATE],
+    tmpData: row[COL_SESSION.TMP_DATA] ? JSON.parse(row[COL_SESSION.TMP_DATA]) : {},
+    updated: row[COL_SESSION.UPDATED],
   };
 }
 
 function setSession(userId, state, tmpData) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  lock.waitLock(LOCK_TIMEOUT_MS);
   try {
     const sheet   = getSheet(SHEET.SESSION);
     const rows    = sheet.getDataRange().getValues();
-    const idx     = rows.findIndex((r, i) => i > 0 && r[0] === userId);
+    const idx     = rows.findIndex((r, i) => i > 0 && r[COL_SESSION.USER_ID] === userId);
     const payload = [userId, state, JSON.stringify(tmpData), now()];
 
     if (idx > 0) {
