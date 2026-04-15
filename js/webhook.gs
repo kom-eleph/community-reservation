@@ -7,7 +7,6 @@ function doGet(e) {
   const callback = e.parameter.callback;
   let result     = { status: 'error', message: 'unknown action' };
 
-  // DEBUGフラグが true のときのみログ記録（本番ログ量削減）
   debugLog(`doGet action=${action} userId=${e.parameter.userId || '(none)'}`);
 
   try {
@@ -51,7 +50,6 @@ function doGet(e) {
         result = getInitialData(e.parameter.userId);
         break;
       case 'getEventStats':
-        // 管理者向け（本番ではパスワード確認などの追加を推奨）
         result = getEventStats(e.parameter.eventId);
         break;
       case 'joinWaitlist':
@@ -61,7 +59,6 @@ function doGet(e) {
         result = { status: 'error', message: 'unknown action: ' + action };
     }
   } catch (err) {
-    // エラーは常にログ記録（DEBUGフラグ不問）
     Logger.log(`[ERROR] action=${action} message=${err.message}\n${err.stack}`);
     result = { status: 'error', message: 'サーバーエラーが発生しました。しばらく時間をおいて再度お試しください。' };
   }
@@ -81,7 +78,6 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
 
-    // LIFFからのPOSTリクエスト処理
     if (body.action === 'reserve') {
       const result = processReservation(body.userId, body.schedId, body.name);
       return ContentService
@@ -89,7 +85,6 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // LINE Webhookイベント処理
     const events = body.events || [];
     if (events.length === 0) return HtmlService.createHtmlOutput('ok');
     events.forEach(event => handleEvent(event));
@@ -114,39 +109,26 @@ function handleEvent(event) {
   const session = getSession(userId);
   const state   = session ? session.state : STATE.IDLE;
 
-  // ── リッチメニューキーワード（どの状態からでも受け付ける）────
-  // 完全一致のみ。INQUIRY_WAIT中でも割り込んで処理する。
   if (text === '予約する')        return startReservation(userId, replyToken);
   if (text === '予約確認')        return showMyReservation(userId, replyToken);
   if (text === '予約変更')        return startChange(userId, replyToken);
   if (text === 'キャンセル')      return startCancel(userId, replyToken);
   if (text === 'お問い合わせ')    return handleInquiryTrigger(userId, replyToken);
 
-  // ── リッチメニューの非お問い合わせボタン（無視リスト）────────
-  // これらのテキストは別の画面遷移や情報表示を目的としたボタンであり
-  // お問い合わせとして受け付けない。INQUIRY_WAIT中でも同様。
-  // ★ リッチメニューにボタンを追加した場合はここにも追記すること
-  // ★ リッチメニューにボタンを追加した場合はここにも追記すること
-  // 大文字小文字・全角スペースを正規化して完全一致チェックする
   const RICH_MENU_IGNORE = [
     '1 day Xとは？',
   ];
   const normalizedText = text.replace(/　/g, ' ').toLowerCase();
   if (RICH_MENU_IGNORE.some(t => normalizedText === t.replace(/　/g, ' ').toLowerCase())) {
-    // ボタン用のコンテンツ表示などが必要な場合はここで処理する
-    // 現状はセッションをリセットせず何も返さない（無視）
     return;
   }
 
-  // ── セッション状態に応じたルーティング ────────────────────
   if (state === STATE.WAITING_NAME)  return handleNameInput(userId, text, replyToken, session);
   if (state === STATE.WAITING_SCHED) return handleSchedSelect(userId, text, replyToken, session);
   if (state === STATE.CONFIRM)       return handleConfirm(userId, text, replyToken, session);
 
-  // お問い合わせ入力待ち → 質問として受け付けてFAQ検索→受付へ
   if (state === STATE.INQUIRY_WAIT) return handleInquiry(userId, text, replyToken);
 
-  // 担当者返信待ち → テキストを受け付けず「対応中」を返す
   if (state === STATE.WAITING_REPLY) {
     replyText(replyToken,
       '現在担当者が確認中です。\n返信までしばらくお待ちください🙏\n\n' +
@@ -155,7 +137,6 @@ function handleEvent(event) {
     return;
   }
 
-  // IDLE状態での自由テキスト → 案内を返す（受け付けない）
   replyText(replyToken,
     'メニューの「お問い合わせ」ボタンからご質問をお送りください💬'
   );
