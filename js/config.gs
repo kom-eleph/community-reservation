@@ -2,17 +2,20 @@
 // config.gs  ★ここだけ自分の値に書き換える
 // ============================================================
 
-const SPREADSHEET_ID = 'hogehoge';
-const LINE_CHANNEL_ACCESS_TOKEN = 'hogehoge';
-const LINE_CHANNEL_SECRET = 'hogehoge';
+const SPREADSHEET_ID = 'hoge';
+const LINE_CHANNEL_ACCESS_TOKEN = 'hoge';
+const LINE_CHANNEL_SECRET = 'hoge';
 
 // 管理者通知用LINEユーザーID（任意。不要なら空文字 '' のまま）
-const ADMIN_LINE_USER_ID = 'hogehoge';
- 
+const ADMIN_LINE_USER_ID = 'hoge';
+
 // デバッグフラグ（本番運用時は false にしてログ量を削減）
 const DEBUG = false;
- 
-// シート名（変更しないこと）
+
+// ============================================================
+// シート名
+// ============================================================
+
 const SHEET = {
   EVENT:    'イベントマスタ',
   SCHED:    '日程マスタ',
@@ -21,29 +24,166 @@ const SHEET = {
   USER:     'ユーザーシート',
   SESSION:  'セッションシート',
   WAITLIST: 'キャンセル待ちシート',
-  INQUIRY:  'お問い合わせシート',  // ← 追加
+  INQUIRY:  'お問い合わせシート',
 };
- 
-// セッションState定数
+
+// ============================================================
+// セッション State 定数
+// ============================================================
+
 const STATE = {
-  IDLE:           'IDLE',
-  WAITING_NAME:   'WAITING_NAME',
-  WAITING_SCHED:  'WAITING_SCHED',
-  CONFIRM:        'CONFIRM',
-  INQUIRY_WAIT:   'INQUIRY_WAIT',   // お問い合わせ内容の入力待ち
-  WAITING_REPLY:  'WAITING_REPLY',  // 担当者の返信待ち（テキスト受付停止）
+  IDLE:          'IDLE',
+  WAITING_NAME:  'WAITING_NAME',
+  WAITING_SCHED: 'WAITING_SCHED',
+  CONFIRM:       'CONFIRM',
+  INQUIRY_WAIT:  'INQUIRY_WAIT',
+  WAITING_REPLY: 'WAITING_REPLY',
 };
- 
+
+// ============================================================
+// ステータス値定数
+// シートへの書き込み・比較はすべてここを参照し、文字列直書きを禁止する
+// ============================================================
+
+const RESERVE_STATUS = {
+  ACTIVE:       '予約中',
+  CANCELLED:    'キャンセル',
+  CHANGED:      '変更済',
+};
+
+const WAITLIST_STATUS = {
+  WAITING:  '待機中',
+  NOTIFIED: '通知済',
+};
+
+const INQUIRY_STATUS = {
+  OPEN:   '未対応',
+  CLOSED: '対応済',
+};
+
+const USER_STATUS = {
+  FOUND: 'found',
+  NONE:  'none',
+};
+
+// API レスポンスの status 値
+const API_STATUS = {
+  OK:    'ok',
+  ERROR: 'error',
+  FULL:  'full',
+};
+
+// ============================================================
+// 各シートの列インデックス定数（0始まり）
+// getAllRows() が返す配列 row[N] の N に対応する
+// スプレッドシートの列順を変更した場合はここだけ修正する
+// ============================================================
+
+// イベントマスタ: A=ID B=名前 C=説明 D=定員 E=有効フラグ F=参加費 G=持ち物 H=補足
+const COL_EVENT = {
+  ID:          0,
+  NAME:        1,
+  DESCRIPTION: 2,
+  CAPACITY:    3,
+  IS_ACTIVE:   4,
+  FEE:         5,
+  STUFF:       6,
+  NOTE:        7,
+};
+
+// 日程マスタ: A=日程ID B=イベントID C=開催日時 D=受付開始 E=受付終了 F=個別定員 G=場所
+const COL_SCHED = {
+  ID:           0,
+  EVENT_ID:     1,
+  DATETIME:     2,
+  ACCEPT_START: 3,
+  ACCEPT_END:   4,
+  CAPACITY:     5,
+  LOCATION:     6,
+};
+
+// 予約シート: A=予約ID B=userId C=日程ID D=ステータス E=予約日時 F=キャンセル日時
+const COL_RESERVE = {
+  ID:           0,
+  USER_ID:      1,
+  SCHED_ID:     2,
+  STATUS:       3,
+  RESERVED_AT:  4,
+  CANCELLED_AT: 5,
+};
+
+// ユーザーシート: A=userId B=名前 C=年齢 D=性別 E=登録日時
+const COL_USER = {
+  ID:         0,
+  NAME:       1,
+  AGE:        2,
+  GENDER:     3,
+  CREATED_AT: 4,
+};
+
+// セッションシート: A=userId B=state C=tmpData D=updated
+const COL_SESSION = {
+  USER_ID:  0,
+  STATE:    1,
+  TMP_DATA: 2,
+  UPDATED:  3,
+};
+
+// キャンセル待ちシート: A=userId B=日程ID C=ステータス D=登録日時 E=通知日時
+const COL_WAITLIST = {
+  USER_ID:     0,
+  SCHED_ID:    1,
+  STATUS:      2,
+  CREATED_AT:  3,
+  NOTIFIED_AT: 4,
+};
+
+// お問い合わせシート: A=ID B=userId C=質問内容 D=ステータス E=受付日時 F=対応日時
+const COL_INQUIRY = {
+  ID:          0,
+  USER_ID:     1,
+  QUESTION:    2,
+  STATUS:      3,
+  RECEIVED_AT: 4,
+  HANDLED_AT:  5,
+};
+
+// FAQシート: A=キーワード B=優先度 C=回答文 D=有効フラグ
+const COL_FAQ = {
+  KEYWORDS:  0,
+  PRIORITY:  1,
+  ANSWER:    2,
+  IS_ACTIVE: 3,
+};
+
+// ============================================================
+// 数値・閾値定数
+// ============================================================
+
+// スクリプトロック待ち時間 (ms)
+const LOCK_TIMEOUT_MS = 10000;
+
+// ユーザー年齢の入力可能範囲
+const USER_AGE_MIN = 1;
+const USER_AGE_MAX = 120;
+
+// シートバリデーション行数（ステータスのドロップダウンを何行まで設定するか）
+const SHEET_VALIDATION_ROWS = 1000;
+
+// 日時フォーマット
+const DATETIME_FORMAT   = 'M月d日(E) HH:mm';
+const DATETIME_TIMEZONE = 'Asia/Tokyo';
+
 // ============================================================
 // 共通ユーティリティ
 // ============================================================
- 
+
 function getSheet(name) {
   return SpreadsheetApp
     .openById(SPREADSHEET_ID)
     .getSheetByName(name);
 }
- 
+
 function getAllRows(sheetName) {
   const sheet = getSheet(sheetName);
   if (!sheet) {
@@ -54,41 +194,43 @@ function getAllRows(sheetName) {
   if (values.length <= 1) return [];
   return values.slice(1);
 }
- 
+
 function findRowIndex(sheetName, colIndex, value) {
   const rows = getAllRows(sheetName);
   return rows.findIndex(r => r[colIndex] === value);
 }
- 
-// ランダム+日付ベースのユニークID生成（行数ベースは削除・変更後に重複しうるため非推奨）
+
 function generateUniqueId(prefix, sheetName) {
-  const dateStr   = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  const dateStr   = Utilities.formatDate(new Date(), DATETIME_TIMEZONE, 'yyyyMMdd');
   const randomStr = Math.random().toString(36).substr(2, 5).toUpperCase();
   const candidate = `${prefix}-${dateStr}-${randomStr}`;
- 
-  // 万が一衝突した場合はリトライ（事実上発生しない）
+
   const rows = getAllRows(sheetName);
-  if (rows.some(r => r[0] === candidate)) {
+  if (rows.some(r => r[COL_RESERVE.ID] === candidate)) {
     return generateUniqueId(prefix, sheetName);
   }
   return candidate;
 }
- 
-// 後方互換のためgenerateIdも残す（非推奨）
+
+// 後方互換のため残す（非推奨）
 function generateId(prefix, sheetName) {
   debugLog('[WARN] generateId() is deprecated. Use generateUniqueId()');
   return generateUniqueId(prefix, sheetName);
 }
- 
+
 function now() {
   return new Date();
 }
- 
-// デバッグログ（DEBUG=falseのときは何もしない）
+
+// 日時を統一フォーマットで文字列化するヘルパー
+function formatDatetime(date) {
+  return Utilities.formatDate(new Date(date), DATETIME_TIMEZONE, DATETIME_FORMAT);
+}
+
 function debugLog(msg) {
   if (DEBUG) Logger.log(msg);
 }
- 
+
 // ── 接続確認用 ────────────────────────────────────────────
 function testAuth() {
   const url = 'https://api.line.me/v2/bot/info';
@@ -101,7 +243,7 @@ function testAuth() {
   Logger.log('LINE Bot接続確認: ' + res.getResponseCode());
   Logger.log(res.getContentText());
 }
- 
+
 function testSpreadsheet() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   Logger.log('スプレッドシート: ' + ss.getName());
@@ -110,70 +252,115 @@ function testSpreadsheet() {
     Logger.log(name + ': ' + (sheet ? '✅ 存在' : '❌ 見つからない'));
   });
 }
- 
+
 // ── お問い合わせシートの初期セットアップ ─────────────────
 // GASエディタから一度だけ手動実行する
 function setupInquirySheet() {
   const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(SHEET.INQUIRY);
- 
+
   if (!sheet) {
     sheet = ss.insertSheet(SHEET.INQUIRY);
     Logger.log('シートを作成しました: ' + SHEET.INQUIRY);
   }
- 
-  // ヘッダー行が未設定の場合のみ書き込む
+
   const firstRow = sheet.getRange(1, 1).getValue();
   if (!firstRow) {
-    // 列構成: A〜E・F列のみ（管理者が触るのはD列のみ）
     sheet.getRange(1, 1, 1, 6).setValues([[
-      'お問い合わせID', 'userId', '質問内容', 'ステータス',
-      '受付日時', '対応日時'
+      'お問い合わせID', 'userId', '質問内容', 'ステータス', '受付日時', '対応日時',
     ]]);
     sheet.getRange(1, 1, 1, 6)
-      .setBackground('#4a90d9')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold');
+      .setBackground('#4a90d9').setFontColor('#ffffff').setFontWeight('bold');
     sheet.setFrozenRows(1);
-    sheet.setColumnWidth(1, 180); // A: ID
-    sheet.setColumnWidth(2, 160); // B: userId
-    sheet.setColumnWidth(3, 300); // C: 質問内容
-    sheet.setColumnWidth(4, 80);  // D: ステータス ← 管理者が触る唯一の列
-    sheet.setColumnWidth(5, 140); // E: 受付日時
-    sheet.setColumnWidth(6, 140); // F: 対応日時（GAS自動記入）
-    // D列に入力規則（対応済のみ選択可）を設定
+    sheet.setColumnWidth(COL_INQUIRY.ID          + 1, 180);
+    sheet.setColumnWidth(COL_INQUIRY.USER_ID      + 1, 160);
+    sheet.setColumnWidth(COL_INQUIRY.QUESTION     + 1, 300);
+    sheet.setColumnWidth(COL_INQUIRY.STATUS       + 1,  80);
+    sheet.setColumnWidth(COL_INQUIRY.RECEIVED_AT  + 1, 140);
+    sheet.setColumnWidth(COL_INQUIRY.HANDLED_AT   + 1, 140);
+
     const statusRule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(['未対応', '対応済'], true)
+      .requireValueInList([INQUIRY_STATUS.OPEN, INQUIRY_STATUS.CLOSED], true)
       .setAllowInvalid(false)
       .build();
-    sheet.getRange(2, 4, 1000, 1).setDataValidation(statusRule);
+    sheet.getRange(2, COL_INQUIRY.STATUS + 1, SHEET_VALIDATION_ROWS, 1)
+      .setDataValidation(statusRule);
     Logger.log('ヘッダーを設定しました');
   }
   Logger.log('=== setupInquirySheet 完了 ===');
 }
- 
+
+// ── キャンセル待ちシートのセットアップ ───────────────────
+// GASエディタから一度だけ手動実行する
+//
+// 【列構成】
+//   A=userId  B=日程ID  C=ステータス  D=登録日時  E=通知日時
+//
+function setupWaitlistSheet() {
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let   sheet = ss.getSheetByName(SHEET.WAITLIST);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET.WAITLIST);
+    Logger.log('シートを作成しました: ' + SHEET.WAITLIST);
+  }
+
+  const firstRow = sheet.getRange(1, 1).getValue();
+  if (!firstRow) {
+    sheet.getRange(1, 1, 1, 5).setValues([[
+      'userId', '日程ID', 'ステータス', '登録日時', '通知日時',
+    ]]);
+    sheet.getRange(1, 1, 1, 5)
+      .setBackground('#f97316').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(COL_WAITLIST.USER_ID     + 1, 200);
+    sheet.setColumnWidth(COL_WAITLIST.SCHED_ID    + 1, 180);
+    sheet.setColumnWidth(COL_WAITLIST.STATUS      + 1, 100);
+    sheet.setColumnWidth(COL_WAITLIST.CREATED_AT  + 1, 140);
+    sheet.setColumnWidth(COL_WAITLIST.NOTIFIED_AT + 1, 140);
+
+    const statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList([WAITLIST_STATUS.WAITING, WAITLIST_STATUS.NOTIFIED], true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(2, COL_WAITLIST.STATUS + 1, SHEET_VALIDATION_ROWS, 1)
+      .setDataValidation(statusRule);
+    Logger.log('キャンセル待ちシートのヘッダーを設定しました');
+  } else {
+    // 既存シート: E列ヘッダーが空なら追加（既存データを壊さない）
+    const eHeader = sheet.getRange(1, COL_WAITLIST.NOTIFIED_AT + 1).getValue();
+    if (!eHeader) {
+      sheet.getRange(1, COL_WAITLIST.NOTIFIED_AT + 1).setValue('通知日時')
+        .setBackground('#f97316').setFontColor('#ffffff').setFontWeight('bold');
+      sheet.setColumnWidth(COL_WAITLIST.NOTIFIED_AT + 1, 140);
+      Logger.log('キャンセル待ちシートにE列（通知日時）を追加しました');
+    } else {
+      Logger.log('E列はすでに設定済みです: ' + eHeader);
+    }
+  }
+  Logger.log('=== setupWaitlistSheet 完了 ===');
+}
+
 // ── イベントマスタへのFAQ用列追加セットアップ ────────────
 // GASエディタから一度だけ手動実行する
-// 既存のA〜E列はそのまま。F〜H列のヘッダーを追加するだけ。
 function setupEventMasterFaqColumns() {
   const sheet = getSheet(SHEET.EVENT);
   if (!sheet) {
     Logger.log('イベントマスタが見つかりません');
     return;
   }
- 
-  // F〜H列のヘッダーが未設定の場合のみ書き込む
-  const fHeader = sheet.getRange(1, 6).getValue();
+
+  const fHeader = sheet.getRange(1, COL_EVENT.FEE + 1).getValue();
   if (!fHeader) {
-    sheet.getRange(1, 6).setValue('参加費');
-    sheet.getRange(1, 7).setValue('持ち物');
-    sheet.getRange(1, 8).setValue('補足');
-    sheet.setColumnWidth(6, 120); // F列
-    sheet.setColumnWidth(7, 300); // G列
-    sheet.setColumnWidth(8, 300); // H列
-    Logger.log('イベントマスタにF〜H列を追加しました');
+    sheet.getRange(1, COL_EVENT.FEE   + 1).setValue('参加費');
+    sheet.getRange(1, COL_EVENT.STUFF + 1).setValue('持ち物');
+    sheet.getRange(1, COL_EVENT.NOTE  + 1).setValue('補足');
+    sheet.setColumnWidth(COL_EVENT.FEE   + 1, 120);
+    sheet.setColumnWidth(COL_EVENT.STUFF + 1, 300);
+    sheet.setColumnWidth(COL_EVENT.NOTE  + 1, 300);
+    Logger.log('イベントマスタにFAQ列を追加しました');
   } else {
-    Logger.log('F列はすでに設定済みです: ' + fHeader);
+    Logger.log('FAQ列はすでに設定済みです: ' + fHeader);
   }
   Logger.log('=== setupEventMasterFaqColumns 完了 ===');
 }
