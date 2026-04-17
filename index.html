@@ -1076,7 +1076,12 @@ function showScreen(name) {
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
   state.currentScreen = name;
-  if (name !== 'sched') stopSchedRefresh();
+  if (name === 'sched') {
+    // sched画面に来るたびタイマーを再起動（attendeeからの戻りも含む）
+    startSchedRefresh();
+  } else {
+    stopSchedRefresh();
+  }
 }
 
 function setLoadingMsg(msg) {
