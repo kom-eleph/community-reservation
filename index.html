@@ -313,10 +313,10 @@
     </div>
   </div>
 
-  <!-- プロフィール登録 -->
-  <div id="s-profile" class="screen">
+  <!-- 参加者情報入力（日程選択後、毎回表示） -->
+  <div id="s-attendee" class="screen">
     <div class="card">
-      <h2>はじめに情報を登録してください</h2>
+      <h2>参加者情報を入力してください</h2>
       <div class="form-group">
         <label class="form-label">お名前<span>*</span></label>
         <input class="form-input" id="inp-name" type="text"
@@ -324,11 +324,9 @@
                autocomplete="name">
       </div>
       <div class="form-group">
-        <label class="form-label">年齢<span>*</span></label>
-        <!-- [U-2修正] id属性の重複を解消: id="inp-age-field" を削除 -->
-        <input class="form-input" id="inp-age" type="number"
-               inputmode="numeric" pattern="[0-9]*"
-               placeholder="例：25">
+        <label class="form-label">生年月日<span>*</span></label>
+        <input class="form-input" id="inp-birthdate" type="date"
+               max="" autocomplete="bday">
       </div>
       <div class="form-group">
         <label class="form-label">性別<span>*</span></label>
@@ -340,7 +338,8 @@
           <option value="未回答">未回答</option>
         </select>
       </div>
-      <button class="btn-green" id="profile-btn" onclick="submitProfile()">次へ</button>
+      <button class="btn-green" id="attendee-btn" onclick="submitAttendee()">確認画面へ</button>
+      <button class="btn-gray"  onclick="showScreen('sched')">戻る</button>
     </div>
   </div>
 
@@ -372,7 +371,7 @@
       <h2>予約内容を確認してください</h2>
       <div class="confirm-box" id="confirm-detail"></div>
       <button class="btn-green" id="confirm-btn" onclick="submitReservation()">この内容で予約する</button>
-      <button class="btn-gray"  onclick="showScreen('sched')">戻る</button>
+      <button class="btn-gray"  onclick="showScreen('attendee')">戻る</button>
     </div>
   </div>
 
@@ -477,8 +476,6 @@ const CONFIG = {
   TOAST_DURATION_MS:          3000,
   TOAST_ERROR_DURATION_MS:    5000,
   REMAINING_WARN_THRESHOLD:      3,
-  USER_AGE_MIN: 1,
-  USER_AGE_MAX: 120,
 };
 
 // ── アプリ状態 ──────────────────────────────────────────────
@@ -542,10 +539,10 @@ function formatError(err) {
 
 // ── 初期化 ────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  const ageField = document.getElementById('inp-age');
-  if (ageField) {
-    ageField.min = CONFIG.USER_AGE_MIN;
-    ageField.max = CONFIG.USER_AGE_MAX;
+  // 生年月日の上限を今日に設定
+  const bdField = document.getElementById('inp-birthdate');
+  if (bdField) {
+    bdField.max = new Date().toISOString().split('T')[0];
   }
   showScreen('loading');
   setLoadingMsg('起動中...');
@@ -566,13 +563,8 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   try {
     const init = await jsonp({ action: 'getInitialData', userId: state.userId });
 
+    // userInfo は毎回の予約入力フォームに前回値を補完するためだけに使う
     state.userInfo = init.userInfo;
-
-    if (init.userInfo.status === 'none') {
-      document.getElementById('inp-name').value = state.userName;
-      showScreen('profile');
-      return;
-    }
 
     if (mode === 'myrsv') {
       renderMyReservations(init.reservations);
@@ -585,40 +577,53 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
 
 }).catch(err => showError('初期化エラー: ' + err.message));
 
-// ── プロフィール登録 ──────────────────────────────────────
-async function submitProfile() {
-  const name   = document.getElementById('inp-name').value.trim();
-  const age    = document.getElementById('inp-age').value.trim();
-  const gender = document.getElementById('inp-gender').value;
+// ── 参加者情報入力フォームを開く ─────────────────────────
+// 日程選択後、showConfirm の代わりにこちらを呼ぶ
+function showAttendeeForm(sched) {
+  state.selectedSched = sched;
 
-  if (!name)                              { showToast('お名前を入力してください'); return; }
-  if (!age || isNaN(age) || age < CONFIG.USER_AGE_MIN || age > CONFIG.USER_AGE_MAX) { showToast('正しい年齢を入力してください'); return; }
-  if (!gender)                            { showToast('性別を選択してください'); return; }
+  // 前回入力値を補完（userInfoがあれば）
+  const info = state.userInfo || {};
+  document.getElementById('inp-name').value      = info.name      || state.userName || '';
+  document.getElementById('inp-birthdate').value = info.birthdate || '';
+  // 性別は前回値を選択済みにする
+  const genderSel = document.getElementById('inp-gender');
+  genderSel.value = info.gender || '';
 
-  const btn = document.getElementById('profile-btn');
-  btn.disabled    = true;
-  btn.textContent = '登録中...';
+  const btn = document.getElementById('attendee-btn');
+  btn.disabled    = false;
+  btn.textContent = '確認画面へ';
+  showScreen('attendee');
+}
 
-  try {
-    const data = await jsonp({ action: 'registerUser', userId: state.userId, name, age, gender });
-    if (data.status === 'ok') {
-      state.userInfo = { status: 'found', name, age, gender };
-      const mode = new URLSearchParams(location.search).get('mode');
-      if (mode === 'myrsv') {
-        loadMyReservations();
-      } else {
-        loadEvents();
-      }
-    } else {
-      showToast('登録に失敗しました: ' + (data.message || '不明なエラー'));
-      btn.disabled    = false;
-      btn.textContent = '次へ';
-    }
-  } catch (e) {
-    showToast('通信エラー: ' + formatError(e));
-    btn.disabled    = false;
-    btn.textContent = '次へ';
+// ── 参加者情報送信 → 確認画面へ ──────────────────────────
+function submitAttendee() {
+  const name      = document.getElementById('inp-name').value.trim();
+  const birthdate = document.getElementById('inp-birthdate').value;
+  const gender    = document.getElementById('inp-gender').value;
+
+  if (!name)           { showToast('お名前を入力してください'); return; }
+  if (name.length > 30){ showToast('お名前は30文字以内で入力してください'); return; }
+  if (!birthdate)      { showToast('生年月日を入力してください'); return; }
+  if (!gender)         { showToast('性別を選択してください'); return; }
+
+  // 簡易バリデーション（詳細はGAS側でも検証）
+  const bd    = new Date(birthdate);
+  const today = new Date();
+  if (isNaN(bd.getTime()) || bd > today) {
+    showToast('正しい生年月日を入力してください');
+    return;
   }
+  const ageYear = (today - bd) / (1000 * 60 * 60 * 24 * 365.25);
+  if (ageYear > 120) {
+    showToast('正しい生年月日を入力してください');
+    return;
+  }
+
+  // state.userInfo に今回入力値を保持（確認画面表示 & 送信で使用）
+  state.userInfo = { ...state.userInfo, name, birthdate, gender };
+
+  showConfirm(state.selectedSched);
 }
 
 // ── イベント一覧 ──────────────────────────────────────────
@@ -732,7 +737,7 @@ function renderSchedules(schedules, ev) {
           <span class="sched-badge badge-ok">${remainLabel}</span>
           <div class="date">${escHtml(s.datetime)}</div>
           <div class="info">📍 ${escHtml(s.location)}</div>`;
-        btn.onclick = () => showConfirm(s);
+        btn.onclick = () => showAttendeeForm(s);
       }
       list.appendChild(btn);
     });
@@ -841,8 +846,8 @@ function showConfirm(sched) {
       <div class="confirm-val">${escHtml(info.name || state.userName)}</div>
     </div>
     <div class="confirm-row">
-      <div class="confirm-label">年齢</div>
-      <div class="confirm-val">${escHtml(String(info.age || '-'))}</div>
+      <div class="confirm-label">生年月日</div>
+      <div class="confirm-val">${escHtml(info.birthdate || '-')}</div>
     </div>
     <div class="confirm-row">
       <div class="confirm-label">性別</div>
@@ -876,22 +881,33 @@ async function submitReservation() {
   btn.disabled    = true;
   btn.textContent = '処理中...';
 
+  // トークンが期限切れの場合は再取得
+  try { state.liffAccessToken = liff.getAccessToken() || state.liffAccessToken; } catch (_) {}
+
   try {
+    const info = state.userInfo || {};
     let data;
+
     if (state.changingReservationId) {
+      // 参加者情報更新＋日程変更を1リクエストで完結
       data = await jsonp({
-        action:           'change',
+        action:           'changeWithAttendee',
         userId:           state.userId,
         oldReservationId: state.changingReservationId,
         newSchedId:       state.selectedSched.schedId,
-        name:             state.userInfo?.name || state.userName,
+        name:             info.name,
+        birthdate:        info.birthdate,
+        gender:           info.gender,
       });
     } else {
+      // 参加者情報登録＋予約を1リクエストで完結
       data = await jsonp({
-        action:  'reserve',
-        userId:  state.userId,
-        schedId: state.selectedSched.schedId,
-        name:    state.userInfo?.name || state.userName,
+        action:    'reserveWithAttendee',
+        userId:    state.userId,
+        schedId:   state.selectedSched.schedId,
+        name:      info.name,
+        birthdate: info.birthdate,
+        gender:    info.gender,
       });
     }
 
@@ -924,7 +940,7 @@ async function submitReservation() {
       showFullModal(state.selectedSched);
 
     } else {
-      showToast(data.message || '処理に失敗しました');
+      showToast(data.message || '処理に失敗しました', CONFIG.TOAST_ERROR_DURATION_MS);
       btn.disabled    = false;
       btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
     }
@@ -935,7 +951,7 @@ async function submitReservation() {
         : '通信エラーが発生しました。電波状況を確認してください'
       , CONFIG.TOAST_ERROR_DURATION_MS);
     } else {
-      showToast('エラー: ' + e.message);
+      showToast('エラー: ' + e.message, CONFIG.TOAST_ERROR_DURATION_MS);
     }
     btn.disabled    = false;
     btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
@@ -1033,7 +1049,7 @@ function startChange(reservationId, eventId, eventName) {
 
 // ── ユーティリティ ─────────────────────────────────────────
 function showScreen(name) {
-  ['loading','error','profile','event','sched','confirm','done','myrsv','cancelled','waitlisted'].forEach(s => {
+  ['loading','error','attendee','event','sched','confirm','done','myrsv','cancelled','waitlisted'].forEach(s => {
     const el = document.getElementById('s-' + s);
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
