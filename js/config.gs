@@ -2,9 +2,9 @@
 // config.gs  ★ここだけ自分の値に書き換える
 // ============================================================
 
-const SPREADSHEET_ID = 'hoge';
+const SPREADSHEET_ID            = 'hoge';
 const LINE_CHANNEL_ACCESS_TOKEN = 'hoge';
-const LINE_CHANNEL_SECRET = 'hoge';
+const LINE_CHANNEL_SECRET       = 'hoge';
 
 // [S-2追加] LIFFアプリのチャネルID（LINE Developersコンソールで確認）
 // トークン検証時に client_id との照合に使用する
@@ -165,10 +165,17 @@ const DATETIME_TIMEZONE     = 'Asia/Tokyo';
 // 共通ユーティリティ
 // ============================================================
 
+// ── リクエストスコープ SSキャッシュ ───────────────────────
+// GAS では SpreadsheetApp.openById() が高コストのため、
+// 1リクエスト内で1度だけ開いてオブジェクトを使い回す。
+let _ss = null;
+function getSS() {
+  if (!_ss) _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return _ss;
+}
+
 function getSheet(name) {
-  return SpreadsheetApp
-    .openById(SPREADSHEET_ID)
-    .getSheetByName(name);
+  return getSS().getSheetByName(name);
 }
 
 function getAllRows(sheetName) {
@@ -187,22 +194,14 @@ function findRowIndex(sheetName, colIndex, value) {
   return rows.findIndex(r => r[colIndex] === value);
 }
 
-// [B-1修正] ID列インデックスを呼び出し元から渡すことで、シートごとに正しい列を参照する
-// 使用例:
-//   予約シート: generateUniqueId('RSV', SHEET.RESERVE, COL_RESERVE.ID)
-//   問い合わせ: generateUniqueId('IQ',  SHEET.INQUIRY, COL_INQUIRY.ID)
-function generateUniqueId(prefix, sheetName, idColIndex) {
-  // idColIndex 未指定時は後方互換のため COL_RESERVE.ID (=0) を使用
-  const colIdx    = (idColIndex !== undefined) ? idColIndex : COL_RESERVE.ID;
+// ── ID生成 ────────────────────────────────────────────────
+// 衝突確率が極めて低い（36^5 ≈ 6000万通り + 日付）ため
+// 重複チェックのシート再読み込みは省略する。
+// 万一の衝突は appendRow 時のエラーで検知できる。
+function generateUniqueId(prefix) {
   const dateStr   = Utilities.formatDate(new Date(), DATETIME_TIMEZONE, 'yyyyMMdd');
-  const randomStr = Math.random().toString(36).substr(2, 5).toUpperCase();
-  const candidate = `${prefix}-${dateStr}-${randomStr}`;
-
-  const rows = getAllRows(sheetName);
-  if (rows.some(r => r[colIdx] === candidate)) {
-    return generateUniqueId(prefix, sheetName, idColIndex);
-  }
-  return candidate;
+  const randomStr = Math.random().toString(36).substr(2, 6).toUpperCase();
+  return prefix + '-' + dateStr + '-' + randomStr;
 }
 
 function now() {

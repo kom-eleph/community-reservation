@@ -63,35 +63,42 @@ function getSchedulesByEvent(eventId, userId) {
     nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
   );
 
+  // ループ前に Map を構築して O(n) → O(1) に改善
+  // bookedMap: schedId → 有効予約数
+  const bookedMap = new Map();
+  // userBookedSet: ユーザーが予約済みの schedId セット
+  const userBookedSet = new Set();
+  // userWaitSet: ユーザーがキャンセル待ちの schedId セット
+  const userWaitSet = new Set();
+
+  for (const r of reserves) {
+    if (r[COL_RESERVE.STATUS] !== RESERVE_STATUS.ACTIVE) continue;
+    const sid = r[COL_RESERVE.SCHED_ID];
+    bookedMap.set(sid, (bookedMap.get(sid) || 0) + 1);
+    if (userId && r[COL_RESERVE.USER_ID] === userId) userBookedSet.add(sid);
+  }
+  if (userId) {
+    for (const w of waitlist) {
+      if (w[COL_WAITLIST.USER_ID] === userId &&
+          w[COL_WAITLIST.STATUS]  === WAITLIST_STATUS.WAITING) {
+        userWaitSet.add(w[COL_WAITLIST.SCHED_ID]);
+      }
+    }
+  }
+
   return {
     schedules: available.map(s => {
-      const capacity    = resolveCapacity(s, evtMap);
-      const booked      = reserves.filter(r =>
-        r[COL_RESERVE.SCHED_ID] === s[COL_SCHED.ID] &&
-        r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
-      ).length;
-      const alreadyBooked = userId
-        ? reserves.some(r =>
-            r[COL_RESERVE.USER_ID]  === userId &&
-            r[COL_RESERVE.SCHED_ID] === s[COL_SCHED.ID] &&
-            r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
-          )
-        : false;
-      const onWaitlist = userId
-        ? waitlist.some(w =>
-            w[COL_WAITLIST.USER_ID]  === userId &&
-            w[COL_WAITLIST.SCHED_ID] === s[COL_SCHED.ID] &&
-            w[COL_WAITLIST.STATUS]   === WAITLIST_STATUS.WAITING
-          )
-        : false;
+      const sid      = s[COL_SCHED.ID];
+      const capacity = resolveCapacity(s, evtMap);
+      const booked   = bookedMap.get(sid) || 0;
       return {
-        schedId:      s[COL_SCHED.ID],
+        schedId:      sid,
         datetime:     formatDatetime(s[COL_SCHED.DATETIME]),
         location:     s[COL_SCHED.LOCATION],
         capacity,
         remaining:    capacity - booked,
-        alreadyBooked,
-        onWaitlist,
+        alreadyBooked: userBookedSet.has(sid),
+        onWaitlist:    userWaitSet.has(sid),
       };
     })
   };
@@ -134,6 +141,14 @@ function cancelReservationById(userId, reservationId) {
   if (!userId || !reservationId) {
     return { status: API_STATUS.ERROR, message: '必要なパラメータが不足しています。' };
   }
+
+  // 通知用情報をロック取得前に読む（書き込み範囲を最小化）
+  const scheds   = getAllRows(SHEET.SCHED);
+  const events   = getAllRows(SHEET.EVENT);
+  const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
+  const userInfo = getUserInfo(userId);
+  const userName = userInfo.status === USER_STATUS.FOUND ? userInfo.name : '不明';
+
   const lock = LockService.getScriptLock();
   lock.waitLock(LOCK_TIMEOUT_MS);
   try {
@@ -153,20 +168,16 @@ function cancelReservationById(userId, reservationId) {
     sheet.getRange(idx + 1, COL_RESERVE.STATUS       + 1).setValue(RESERVE_STATUS.CANCELLED);
     sheet.getRange(idx + 1, COL_RESERVE.CANCELLED_AT + 1).setValue(now());
 
-    const scheds   = getAllRows(SHEET.SCHED);
-    const events   = getAllRows(SHEET.EVENT);
-    const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
-    const sched    = scheds.find(s => s[COL_SCHED.ID] === schedId);
-    const evtName  = evtMap.get(sched?.[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
-    const dt       = sched ? formatDatetime(sched[COL_SCHED.DATETIME]) : '';
-    const userInfo = getUserInfo(userId);
-    const userName = userInfo.status === USER_STATUS.FOUND ? userInfo.name : '不明';
+    const sched   = scheds.find(s => s[COL_SCHED.ID] === schedId);
+    const evtName = evtMap.get(sched?.[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
+    const dt      = sched ? formatDatetime(sched[COL_SCHED.DATETIME]) : '';
 
     notifyUserOnCancel(userId, evtName, dt, reservationId);
     notifyAdminOnCancel(reservationId, userName);
 
     // ロック内でキャンセル待ち昇格まで完結させ二重通知を防ぐ
-    promoteWaitlist(schedId);
+    // 事前に読んだ scheds/evtMap を渡して二重読み込みを回避
+    promoteWaitlist(schedId, scheds, evtMap);
 
     return { status: API_STATUS.OK };
   } finally {
@@ -208,7 +219,7 @@ function processReservation(userId, schedId, name) {
       return { status: API_STATUS.FULL, message: 'この日程は満席です。キャンセル待ちに登録しますか？' };
     }
 
-    const reservationId = generateUniqueId('RSV', SHEET.RESERVE, COL_RESERVE.ID);
+    const reservationId = generateUniqueId('RSV');
     getSheet(SHEET.RESERVE).appendRow([
       reservationId, userId, schedId, RESERVE_STATUS.ACTIVE, now(), '',
     ]);
@@ -387,7 +398,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
     }
 
     const oldSchedId       = reserves[oldIdx][COL_RESERVE.SCHED_ID];
-    const newReservationId = generateUniqueId('RSV', SHEET.RESERVE, COL_RESERVE.ID);
+    const newReservationId = generateUniqueId('RSV');
 
     getSheet(SHEET.RESERVE).appendRow([
       newReservationId, userId, newSchedId, RESERVE_STATUS.ACTIVE, now(), '',
@@ -401,7 +412,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
     notifyUserOnChange(userId, evtName, dt, loc, newReservationId);
 
     // ロック内でキャンセル待ち昇格まで完結
-    promoteWaitlist(oldSchedId);
+    promoteWaitlist(oldSchedId, scheds, evtMap);
 
     return { status: API_STATUS.OK, reservationId: newReservationId };
   } finally {
@@ -437,17 +448,21 @@ function getInitialData(userId) {
   const evtMap    = new Map(allEvents.map(e => [e[COL_EVENT.ID], e]));
   const schedMap  = new Map(allScheds.map(s => [s[COL_SCHED.ID], s]));
 
+  // ループ前にユーザーの有効予約 schedId セットを構築
+  const userActiveSchedIds = new Set(
+    allReserves
+      .filter(r => r[COL_RESERVE.USER_ID] === userId &&
+                   r[COL_RESERVE.STATUS]  === RESERVE_STATUS.ACTIVE)
+      .map(r => r[COL_RESERVE.SCHED_ID])
+  );
+
   const events = allEvents
     .filter(e => e[COL_EVENT.IS_ACTIVE] === true && activeIds.has(e[COL_EVENT.ID]))
     .map(e => {
       const eventScheds   = activeScheds.filter(s => s[COL_SCHED.EVENT_ID] === e[COL_EVENT.ID]);
-      const alreadyBooked = eventScheds.length > 0 && eventScheds.every(s =>
-        allReserves.some(r =>
-          r[COL_RESERVE.USER_ID]  === userId &&
-          r[COL_RESERVE.SCHED_ID] === s[COL_SCHED.ID] &&
-          r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
-        )
-      );
+      // O(1) の Set.has で判定
+      const alreadyBooked = eventScheds.length > 0 &&
+        eventScheds.every(s => userActiveSchedIds.has(s[COL_SCHED.ID]));
       return {
         id:          e[COL_EVENT.ID],
         name:        e[COL_EVENT.NAME],
@@ -557,20 +572,24 @@ function joinWaitlist(userId, schedId) {
 
 // ── キャンセル待ち自動昇格 ────────────────────────────────
 // cancel/changeReservation のロック内から呼ばれるため、
-// ここではロックを取得しない（再取得するとデッドロックになる）
-// 残席確認済みの状態で呼ばれることを前提とする
-function promoteWaitlist(schedId) {
+// ここではロックを取得しない（再取得するとデッドロックになる）。
+// 呼び出し元がすでに読み込んだ scheds/evtMap を渡すことで
+// 二重シート読み込みを回避する。
+function promoteWaitlist(schedId, scheds, evtMap) {
   if (!schedId) return;
   try {
-    // 残席を再確認（cancelReservation のコミット後の値）
-    const reserves = getAllRows(SHEET.RESERVE);
-    const scheds   = getAllRows(SHEET.SCHED);
-    const events   = getAllRows(SHEET.EVENT);
-    const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
+    // 渡されなかった場合は自前で読む（後方互換）
+    if (!scheds) scheds = getAllRows(SHEET.SCHED);
+    if (!evtMap) {
+      const events = getAllRows(SHEET.EVENT);
+      evtMap = new Map(events.map(e => [e[COL_EVENT.ID], e]));
+    }
 
     const sched = scheds.find(s => s[COL_SCHED.ID] === schedId);
     if (!sched) return;
 
+    // 残席を再確認（コミット後の値を読む）
+    const reserves = getAllRows(SHEET.RESERVE);
     const capacity = resolveCapacity(sched, evtMap);
     const booked   = reserves.filter(r =>
       r[COL_RESERVE.SCHED_ID] === schedId &&

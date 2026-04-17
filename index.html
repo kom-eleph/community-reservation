@@ -703,6 +703,8 @@ async function loadSchedules(ev) {
   try {
     const data = await jsonp({ action: 'getSchedules', eventId: ev.id, userId: state.userId });
     renderSchedules(data.schedules || [], ev);
+    // 新しい日程画面を開いたときのみタイマーを起動する
+    startSchedRefresh();
   } catch (e) {
     showError('日程の取得に失敗しました。\n' + formatError(e));
   }
@@ -764,8 +766,8 @@ function renderSchedules(schedules, ev) {
       list.appendChild(btn);
     });
   }
+  // タイマーは loadSchedules が管理する。refreshSchedView 経由では再起動しない。
   showScreen('sched');
-  startSchedRefresh();
 }
 
 // ── 満席モーダル表示 ──────────────────────────────────────
@@ -1076,12 +1078,10 @@ function showScreen(name) {
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
   state.currentScreen = name;
-  if (name === 'sched') {
-    // sched画面に来るたびタイマーを再起動（attendeeからの戻りも含む）
-    startSchedRefresh();
-  } else {
-    stopSchedRefresh();
-  }
+  // sched 以外に遷移したときだけタイマーを止める。
+  // sched への startSchedRefresh は loadSchedules のみが責任を持つ。
+  // attendee/confirm からの「戻る」では既存タイマーをそのまま引き継ぐ。
+  if (name !== 'sched') stopSchedRefresh();
 }
 
 function setLoadingMsg(msg) {
