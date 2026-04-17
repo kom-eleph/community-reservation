@@ -6,6 +6,10 @@ const SPREADSHEET_ID = 'hoge';
 const LINE_CHANNEL_ACCESS_TOKEN = 'hoge';
 const LINE_CHANNEL_SECRET = 'hoge';
 
+// [S-2追加] LIFFアプリのチャネルID（LINE Developersコンソールで確認）
+// トークン検証時に client_id との照合に使用する
+const LIFF_CHANNEL_ID = 'hoge';
+
 // 管理者通知用LINEユーザーID（任意。不要なら空文字 '' のまま）
 const ADMIN_LINE_USER_ID = 'hoge';
 
@@ -42,13 +46,12 @@ const STATE = {
 
 // ============================================================
 // ステータス値定数
-// シートへの書き込み・比較はすべてここを参照し、文字列直書きを禁止する
 // ============================================================
 
 const RESERVE_STATUS = {
-  ACTIVE:       '予約中',
-  CANCELLED:    'キャンセル',
-  CHANGED:      '変更済',
+  ACTIVE:    '予約中',
+  CANCELLED: 'キャンセル',
+  CHANGED:   '変更済',
 };
 
 const WAITLIST_STATUS = {
@@ -66,7 +69,6 @@ const USER_STATUS = {
   NONE:  'none',
 };
 
-// API レスポンスの status 値
 const API_STATUS = {
   OK:    'ok',
   ERROR: 'error',
@@ -75,11 +77,8 @@ const API_STATUS = {
 
 // ============================================================
 // 各シートの列インデックス定数（0始まり）
-// getAllRows() が返す配列 row[N] の N に対応する
-// スプレッドシートの列順を変更した場合はここだけ修正する
 // ============================================================
 
-// イベントマスタ: A=ID B=名前 C=説明 D=定員 E=有効フラグ F=参加費 G=持ち物 H=補足
 const COL_EVENT = {
   ID:          0,
   NAME:        1,
@@ -91,7 +90,6 @@ const COL_EVENT = {
   NOTE:        7,
 };
 
-// 日程マスタ: A=日程ID B=イベントID C=開催日時 D=受付開始 E=受付終了 F=個別定員 G=場所
 const COL_SCHED = {
   ID:           0,
   EVENT_ID:     1,
@@ -102,7 +100,6 @@ const COL_SCHED = {
   LOCATION:     6,
 };
 
-// 予約シート: A=予約ID B=userId C=日程ID D=ステータス E=予約日時 F=キャンセル日時
 const COL_RESERVE = {
   ID:           0,
   USER_ID:      1,
@@ -112,16 +109,15 @@ const COL_RESERVE = {
   CANCELLED_AT: 5,
 };
 
-// ユーザーシート: A=userId B=名前 C=年齢 D=性別 E=登録日時
+// ユーザーシート: A=userId B=名前 C=生年月日 D=性別 E=登録日時
 const COL_USER = {
   ID:         0,
   NAME:       1,
-  AGE:        2,
+  BIRTHDATE:  2,   // 旧: AGE → 生年月日(YYYY-MM-DD文字列)に変更
   GENDER:     3,
   CREATED_AT: 4,
 };
 
-// セッションシート: A=userId B=state C=tmpData D=updated
 const COL_SESSION = {
   USER_ID:  0,
   STATE:    1,
@@ -129,7 +125,6 @@ const COL_SESSION = {
   UPDATED:  3,
 };
 
-// キャンセル待ちシート: A=userId B=日程ID C=ステータス D=登録日時 E=通知日時
 const COL_WAITLIST = {
   USER_ID:     0,
   SCHED_ID:    1,
@@ -138,7 +133,6 @@ const COL_WAITLIST = {
   NOTIFIED_AT: 4,
 };
 
-// お問い合わせシート: A=ID B=userId C=質問内容 D=ステータス E=受付日時 F=対応日時
 const COL_INQUIRY = {
   ID:          0,
   USER_ID:     1,
@@ -148,7 +142,6 @@ const COL_INQUIRY = {
   HANDLED_AT:  5,
 };
 
-// FAQシート: A=キーワード B=優先度 C=回答文 D=有効フラグ
 const COL_FAQ = {
   KEYWORDS:  0,
   PRIORITY:  1,
@@ -160,19 +153,13 @@ const COL_FAQ = {
 // 数値・閾値定数
 // ============================================================
 
-// スクリプトロック待ち時間 (ms)
-const LOCK_TIMEOUT_MS = 10000;
-
-// ユーザー年齢の入力可能範囲
-const USER_AGE_MIN = 1;
-const USER_AGE_MAX = 120;
-
-// シートバリデーション行数（ステータスのドロップダウンを何行まで設定するか）
+const LOCK_TIMEOUT_MS       = 10000;
+// 生年月日の受付可能範囲（現在日から何年前まで）
+const BIRTHDATE_MIN_YEARS   = 1;    // 最小: 1歳以上
+const BIRTHDATE_MAX_YEARS   = 120;  // 最大: 120歳以下
 const SHEET_VALIDATION_ROWS = 1000;
-
-// 日時フォーマット
-const DATETIME_FORMAT   = 'M月d日(E) HH:mm';
-const DATETIME_TIMEZONE = 'Asia/Tokyo';
+const DATETIME_FORMAT       = 'M月d日(E) HH:mm';
+const DATETIME_TIMEZONE     = 'Asia/Tokyo';
 
 // ============================================================
 // 共通ユーティリティ
@@ -200,29 +187,28 @@ function findRowIndex(sheetName, colIndex, value) {
   return rows.findIndex(r => r[colIndex] === value);
 }
 
-function generateUniqueId(prefix, sheetName) {
+// [B-1修正] ID列インデックスを呼び出し元から渡すことで、シートごとに正しい列を参照する
+// 使用例:
+//   予約シート: generateUniqueId('RSV', SHEET.RESERVE, COL_RESERVE.ID)
+//   問い合わせ: generateUniqueId('IQ',  SHEET.INQUIRY, COL_INQUIRY.ID)
+function generateUniqueId(prefix, sheetName, idColIndex) {
+  // idColIndex 未指定時は後方互換のため COL_RESERVE.ID (=0) を使用
+  const colIdx    = (idColIndex !== undefined) ? idColIndex : COL_RESERVE.ID;
   const dateStr   = Utilities.formatDate(new Date(), DATETIME_TIMEZONE, 'yyyyMMdd');
   const randomStr = Math.random().toString(36).substr(2, 5).toUpperCase();
   const candidate = `${prefix}-${dateStr}-${randomStr}`;
 
   const rows = getAllRows(sheetName);
-  if (rows.some(r => r[COL_RESERVE.ID] === candidate)) {
-    return generateUniqueId(prefix, sheetName);
+  if (rows.some(r => r[colIdx] === candidate)) {
+    return generateUniqueId(prefix, sheetName, idColIndex);
   }
   return candidate;
-}
-
-// 後方互換のため残す（非推奨）
-function generateId(prefix, sheetName) {
-  debugLog('[WARN] generateId() is deprecated. Use generateUniqueId()');
-  return generateUniqueId(prefix, sheetName);
 }
 
 function now() {
   return new Date();
 }
 
-// 日時を統一フォーマットで文字列化するヘルパー
 function formatDatetime(date) {
   return Utilities.formatDate(new Date(date), DATETIME_TIMEZONE, DATETIME_FORMAT);
 }
@@ -254,7 +240,6 @@ function testSpreadsheet() {
 }
 
 // ── お問い合わせシートの初期セットアップ ─────────────────
-// GASエディタから一度だけ手動実行する
 function setupInquirySheet() {
   const ss  = SpreadsheetApp.openById(SPREADSHEET_ID);
   let sheet = ss.getSheetByName(SHEET.INQUIRY);
@@ -291,11 +276,6 @@ function setupInquirySheet() {
 }
 
 // ── キャンセル待ちシートのセットアップ ───────────────────
-// GASエディタから一度だけ手動実行する
-//
-// 【列構成】
-//   A=userId  B=日程ID  C=ステータス  D=登録日時  E=通知日時
-//
 function setupWaitlistSheet() {
   const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   let   sheet = ss.getSheetByName(SHEET.WAITLIST);
@@ -327,7 +307,6 @@ function setupWaitlistSheet() {
       .setDataValidation(statusRule);
     Logger.log('キャンセル待ちシートのヘッダーを設定しました');
   } else {
-    // 既存シート: E列ヘッダーが空なら追加（既存データを壊さない）
     const eHeader = sheet.getRange(1, COL_WAITLIST.NOTIFIED_AT + 1).getValue();
     if (!eHeader) {
       sheet.getRange(1, COL_WAITLIST.NOTIFIED_AT + 1).setValue('通知日時')
@@ -342,7 +321,6 @@ function setupWaitlistSheet() {
 }
 
 // ── イベントマスタへのFAQ用列追加セットアップ ────────────
-// GASエディタから一度だけ手動実行する
 function setupEventMasterFaqColumns() {
   const sheet = getSheet(SHEET.EVENT);
   if (!sheet) {
