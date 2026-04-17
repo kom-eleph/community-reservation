@@ -44,7 +44,8 @@ function handleInquiry(userId, text, replyToken) {
   }
 
   // ③ 担当者受付
-  const inquiryId = generateUniqueId('IQ', SHEET.INQUIRY);
+  // [B-1修正] COL_INQUIRY.ID を明示的に渡す
+  const inquiryId = generateUniqueId('IQ', SHEET.INQUIRY, COL_INQUIRY.ID);
   recordInquiry(userId, text, INQUIRY_STATUS.OPEN, inquiryId);
 
   setSession(userId, STATE.WAITING_REPLY, { inquiryId });
