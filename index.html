@@ -271,6 +271,16 @@
   .modal-actions .btn-orange { margin-top: 0; }
   .modal-actions .btn-gray   { margin-top: 0; }
 
+  /* ── 登録済み情報バナー ── */
+  .saved-info-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #eff6ff; border: 1px solid #bfdbfe;
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
+    font-size: 12px; color: #1d4ed8; gap: 8px;
+  }
+  .saved-info-bar span { flex: 1; line-height: 1.5; }
+  .saved-info-bar.hidden { display: none; }
+
   /* ── Screen manager ── */
   .screen { display: none; }
 
@@ -317,6 +327,10 @@
   <div id="s-attendee" class="screen">
     <div class="card">
       <h2>参加者情報を入力してください</h2>
+      <!-- 登録済みの情報がある場合に表示するバナー -->
+      <div id="saved-info-bar" class="saved-info-bar hidden">
+        <span id="saved-info-text">📋 前回の情報を入力しました。変更がなければそのまま進めてください。</span>
+      </div>
       <div class="form-group">
         <label class="form-label">お名前<span>*</span></label>
         <input class="form-input" id="inp-name" type="text"
@@ -578,17 +592,25 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
 }).catch(err => showError('初期化エラー: ' + err.message));
 
 // ── 参加者情報入力フォームを開く ─────────────────────────
-// 日程選択後、showConfirm の代わりにこちらを呼ぶ
+// 日程選択後に呼ぶ。シート登録済みの場合は値をセットしてバナーを表示する。
 function showAttendeeForm(sched) {
   state.selectedSched = sched;
 
-  // 前回入力値を補完（userInfoがあれば）
-  const info = state.userInfo || {};
-  document.getElementById('inp-name').value      = info.name      || state.userName || '';
-  document.getElementById('inp-birthdate').value = info.birthdate || '';
-  // 性別は前回値を選択済みにする
-  const genderSel = document.getElementById('inp-gender');
-  genderSel.value = info.gender || '';
+  const info    = state.userInfo || {};
+  const hasSaved = info.status === 'found' && info.name && info.birthdate && info.gender;
+
+  // 登録済み情報があればフォームにセット、なければ空欄
+  document.getElementById('inp-name').value      = hasSaved ? info.name      : (state.userName || '');
+  document.getElementById('inp-birthdate').value = hasSaved ? info.birthdate : '';
+  document.getElementById('inp-gender').value    = hasSaved ? info.gender    : '';
+
+  // 登録済みバナーの表示/非表示
+  const bar = document.getElementById('saved-info-bar');
+  if (hasSaved) {
+    bar.classList.remove('hidden');
+  } else {
+    bar.classList.add('hidden');
+  }
 
   const btn = document.getElementById('attendee-btn');
   btn.disabled    = false;
