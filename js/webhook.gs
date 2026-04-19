@@ -247,10 +247,30 @@ function replyText(replyToken, text) {
   replyMessage(replyToken, [{ type: 'text', text }]);
 }
 
-// ── ウォームアップ（毎時トリガー推奨） ───────────────────
+// ── ウォームアップ ───────────────────────────────────────
+// GASのコールドスタートを防ぐため、定期的にスプレッドシートへ
+// アクセスしてインスタンスをウォーム状態に保つ。
+// setupKeepAliveTrigger() を一度だけ手動実行してトリガーを登録すること。
 function keepAlive() {
   getSheet(SHEET.SESSION);
   debugLog('keepAlive: ' + new Date());
+}
+
+// ── keepAlive トリガー登録ヘルパー（一度だけ手動実行） ────
+// 実行後は GASエディタ → トリガー で「keepAlive / 5分ごと」が
+// 登録されていることを確認すること。
+function setupKeepAliveTrigger() {
+  // 既存の keepAlive トリガーをすべて削除してから再登録（重複防止）
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'keepAlive')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('keepAlive')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+
+  Logger.log('keepAlive トリガーを登録しました（5分ごと）');
 }
 
 // ── テスト関数 ────────────────────────────────────────────

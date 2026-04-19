@@ -68,12 +68,13 @@ function getSchedulesByEvent(eventId, userId) {
   const waitlist = getAllRows(SHEET.WAITLIST);
   const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
 
-  // ACCEPT_START/END を一度だけパース
-  const available = scheds.filter(s =>
-    s[COL_SCHED.EVENT_ID] === eventId &&
-    nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
-    nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
-  );
+  // ACCEPT_START/END を一度だけパースしてフィルタ（ループ内で毎回 new Date() しない）
+  const available = scheds.filter(s => {
+    if (s[COL_SCHED.EVENT_ID] !== eventId) return false;
+    const start = new Date(s[COL_SCHED.ACCEPT_START]);
+    const end   = new Date(s[COL_SCHED.ACCEPT_END]);
+    return nowDate >= start && nowDate <= end;
+  });
 
   // ループ前に Map を構築して O(n) → O(1) に改善
   // bookedMap: schedId → 有効予約数
@@ -251,9 +252,12 @@ function processReservation(userId, schedId, name) {
 }
 
 // ── 参加者情報登録＋予約を一本化 ─────────────────────────
-// フロントから1回のリクエストで完結させ部分成功を防ぐ
+// ロックを1回だけ取得してユーザー登録と予約を完結させる。
+// registerUser + processReservation を逐次呼ぶとロックを2回取得することになり、
+// 前日集中時に後続リクエストがロック待機でタイムアウトする可能性があるため、
+// 1つのロック内で両処理をまとめている。
 function reserveWithAttendee(userId, schedId, name, birthdate, gender) {
-  // バリデーション
+  // ── バリデーション（ロック取得前に実施）────────────────
   const cleanName = sanitizeString(name, 30);
   if (!cleanName) return { status: API_STATUS.ERROR, message: 'お名前を入力してください。' };
 
@@ -264,17 +268,64 @@ function reserveWithAttendee(userId, schedId, name, birthdate, gender) {
   if (!allowedGenders.includes(gender)) {
     return { status: API_STATUS.ERROR, message: '性別の値が不正です。' };
   }
+  if (!userId || !schedId) {
+    return { status: API_STATUS.ERROR, message: '必要なパラメータが不足しています。' };
+  }
 
-  // ① 参加者情報を登録/更新
-  const regResult = registerUser(userId, cleanName, birthdate, gender);
-  if (regResult.status !== API_STATUS.OK) return regResult;
+  // ── 1つのロック内でユーザー登録 + 予約を完結 ──────────
+  const lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_TIMEOUT_MS);
+  try {
+    // ① ユーザー情報を登録/更新
+    upsertUser(userId, cleanName, birthdate, gender);
 
-  // ② 予約処理
-  return processReservation(userId, schedId, cleanName);
+    // ② 重複・満席チェックと予約登録
+    const reserves = getAllRows(SHEET.RESERVE);
+    const scheds   = getMasterCachedRows(SHEET.SCHED);
+    const events   = getMasterCachedRows(SHEET.EVENT);
+    const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
+
+    if (reserves.some(r =>
+      r[COL_RESERVE.USER_ID]  === userId &&
+      r[COL_RESERVE.SCHED_ID] === schedId &&
+      r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
+    )) {
+      return { status: API_STATUS.ERROR, message: 'すでにこの日程に予約済みです。' };
+    }
+
+    const sched = scheds.find(s => s[COL_SCHED.ID] === schedId);
+    if (!sched) return { status: API_STATUS.ERROR, message: '日程が見つかりません。' };
+
+    const capacity = resolveCapacity(sched, evtMap);
+    const booked   = reserves.filter(r =>
+      r[COL_RESERVE.SCHED_ID] === schedId &&
+      r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
+    ).length;
+    if (booked >= capacity) {
+      return { status: API_STATUS.FULL, message: 'この日程は満席です。キャンセル待ちに登録しますか？' };
+    }
+
+    const reservationId = generateUniqueId('RSV');
+    getSheet(SHEET.RESERVE).appendRow([
+      reservationId, userId, schedId, RESERVE_STATUS.ACTIVE, now(), '',
+    ]);
+    invalidateRowCache(SHEET.RESERVE);
+
+    const evtName = evtMap.get(sched[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
+    const dt      = formatDatetime(sched[COL_SCHED.DATETIME]);
+    const loc     = sched[COL_SCHED.LOCATION] || '';
+    notifyUserOnReserve(userId, evtName, dt, loc, reservationId);
+
+    return { status: API_STATUS.OK, reservationId };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ── 参加者情報登録＋日程変更を一本化 ─────────────────────
+// reserveWithAttendee と同様に1つのロック内で完結させる。
 function changeWithAttendee(userId, oldReservationId, newSchedId, name, birthdate, gender) {
+  // ── バリデーション（ロック取得前）────────────────────
   const cleanName = sanitizeString(name, 30);
   if (!cleanName) return { status: API_STATUS.ERROR, message: 'お名前を入力してください。' };
 
@@ -285,14 +336,92 @@ function changeWithAttendee(userId, oldReservationId, newSchedId, name, birthdat
   if (!allowedGenders.includes(gender)) {
     return { status: API_STATUS.ERROR, message: '性別の値が不正です。' };
   }
+  if (!userId || !oldReservationId || !newSchedId) {
+    return { status: API_STATUS.ERROR, message: '必要なパラメータが不足しています。' };
+  }
 
-  const regResult = registerUser(userId, cleanName, birthdate, gender);
-  if (regResult.status !== API_STATUS.OK) return regResult;
+  // ── 1つのロック内でユーザー登録 + 日程変更を完結 ───────
+  const lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_TIMEOUT_MS);
+  try {
+    // ① ユーザー情報を登録/更新
+    upsertUser(userId, cleanName, birthdate, gender);
 
-  return changeReservation(userId, oldReservationId, newSchedId, cleanName);
+    // ② 変更元予約の確認
+    const reserves = getAllRows(SHEET.RESERVE);
+    const scheds   = getMasterCachedRows(SHEET.SCHED);
+    const events   = getMasterCachedRows(SHEET.EVENT);
+    const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
+
+    const oldIdx = reserves.findIndex(r =>
+      r[COL_RESERVE.ID]      === oldReservationId &&
+      r[COL_RESERVE.USER_ID] === userId &&
+      r[COL_RESERVE.STATUS]  === RESERVE_STATUS.ACTIVE
+    );
+    if (oldIdx === -1) {
+      return { status: API_STATUS.ERROR, message: '変更元の予約が見つかりません。' };
+    }
+
+    if (reserves.some(r =>
+      r[COL_RESERVE.USER_ID]  === userId &&
+      r[COL_RESERVE.SCHED_ID] === newSchedId &&
+      r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
+    )) {
+      return { status: API_STATUS.ERROR, message: 'すでにこの日程に予約済みです。' };
+    }
+
+    const sched = scheds.find(s => s[COL_SCHED.ID] === newSchedId);
+    if (!sched) return { status: API_STATUS.ERROR, message: '日程が見つかりません。' };
+
+    const capacity = resolveCapacity(sched, evtMap);
+    const booked   = reserves.filter(r =>
+      r[COL_RESERVE.SCHED_ID] === newSchedId &&
+      r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
+    ).length;
+    if (booked >= capacity) {
+      return { status: API_STATUS.FULL, message: 'この日程は満席です。キャンセル待ちに登録しますか？' };
+    }
+
+    const oldSchedId       = reserves[oldIdx][COL_RESERVE.SCHED_ID];
+    const newReservationId = generateUniqueId('RSV');
+
+    getSheet(SHEET.RESERVE).appendRow([
+      newReservationId, userId, newSchedId, RESERVE_STATUS.ACTIVE, now(), '',
+    ]);
+    getSheet(SHEET.RESERVE).getRange(oldIdx + 2, COL_RESERVE.STATUS + 1)
+      .setValue(RESERVE_STATUS.CHANGED);
+    invalidateRowCache(SHEET.RESERVE);
+
+    const evtName = evtMap.get(sched[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
+    const dt      = formatDatetime(sched[COL_SCHED.DATETIME]);
+    const loc     = sched[COL_SCHED.LOCATION] || '';
+    notifyUserOnChange(userId, evtName, dt, loc, newReservationId);
+
+    promoteWaitlist(oldSchedId, scheds, evtMap);
+
+    return { status: API_STATUS.OK, reservationId: newReservationId };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-// ── ユーザー登録（内部共通） ──────────────────────────────
+// ── ユーザー情報の Upsert（ロックなし・呼び出し元がロック取得済みの場合に使用）──
+// reserveWithAttendee / changeWithAttendee のロック内から呼ばれる。
+// 呼び出し元がすでにロックを保持しているため、ここではロックを取得しない。
+function upsertUser(userId, name, birthdate, gender) {
+  const sheet = getSheet(SHEET.USER);
+  const rows  = sheet.getDataRange().getValues();
+  const idx   = rows.findIndex((r, i) => i > 0 && r[COL_USER.ID] === userId);
+  if (idx > 0) {
+    sheet.getRange(idx + 1, COL_USER.NAME + 1, 1, 3).setValues([[name, birthdate, gender]]);
+  } else {
+    sheet.appendRow([userId, name, birthdate, gender, now()]);
+  }
+  invalidateRowCache(SHEET.USER);
+}
+
+// ── ユーザー登録（内部共通・ロック付き）─────────────────
+// 単体で呼ばれる場合（getUserInfo アクション等）はこちらを使う。
 // birthdate: 'YYYY-MM-DD' 形式の文字列
 function registerUser(userId, name, birthdate, gender) {
   if (!userId || !name || !birthdate || !gender) {
@@ -477,11 +606,12 @@ function getBootData(userId, mode) {
   const allReserves = getAllRows(SHEET.RESERVE);
 
   const nowDate = new Date();
-  // ACCEPT_START/END を一度だけパース
-  const activeScheds = allScheds.filter(s =>
-    nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
-    nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
-  );
+  // ACCEPT_START/END を一度だけパースしてフィルタ
+  const activeScheds = allScheds.filter(s => {
+    const start = new Date(s[COL_SCHED.ACCEPT_START]);
+    const end   = new Date(s[COL_SCHED.ACCEPT_END]);
+    return nowDate >= start && nowDate <= end;
+  });
   const activeIds = new Set(activeScheds.map(s => s[COL_SCHED.EVENT_ID]));
 
   // alreadyBooked 判定用: ユーザーの有効予約 schedId セット
