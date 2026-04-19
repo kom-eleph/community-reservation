@@ -497,7 +497,6 @@ const state = {
   userId:                '',
   userName:              '',
   userInfo:              null,
-  // [S-1修正] LIFFアクセストークンを保持し、全リクエストに付与する
   liffAccessToken:       '',
   selectedEvent:         null,
   selectedSched:         null,
@@ -507,6 +506,8 @@ const state = {
   submitting:            false,
   schedRefreshTimer:     null,
   currentScreen:         'loading',
+  // 予約一覧キャッシュ（遅延取得・予約操作後に invalidate する）
+  reservationsCache:     null,
 };
 
 // ── JSONP ──────────────────────────────────────────────────
@@ -575,9 +576,12 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   const mode = new URLSearchParams(location.search).get('mode');
 
   try {
-    const init = await jsonp({ action: 'getInitialData', userId: state.userId });
+    // getBootData: mode を渡して必要最小限のデータのみ取得
+    // 通常起動 → イベント一覧 + ユーザー情報（予約一覧は含まない）
+    // mode=myrsv → 予約一覧 + ユーザー情報（イベント一覧は含まない）
+    const init = await jsonp({ action: 'getBootData', userId: state.userId, mode: mode || 'normal' });
 
-    // userInfo は毎回の予約入力フォームに前回値を補完するためだけに使う
+    // userInfo は参加者情報フォームの前回値補完に使う
     state.userInfo = init.userInfo;
 
     if (mode === 'myrsv') {
@@ -956,6 +960,7 @@ async function submitReservation() {
         doneBtnSub.style.display = 'none';
       }
       state.changingReservationId = null;
+      invalidateReservationsCache();  // 予約内容が変わったのでキャッシュを破棄
       showScreen('done');
 
     } else if (data.status === 'full') {
@@ -984,16 +989,30 @@ async function submitReservation() {
   }
 }
 
-// ── 予約一覧 ──────────────────────────────────────────────
-async function loadMyReservations() {
+// ── 予約一覧（遅延取得・キャッシュ付き） ─────────────────
+// forceRefresh=true のとき: キャッシュを無効化してサーバーから再取得する
+// 通常タップ時: キャッシュがあればそのまま表示（即時表示）
+//              なければサーバーから取得してキャッシュに保存
+async function loadMyReservations(forceRefresh = false) {
+  if (!forceRefresh && state.reservationsCache !== null) {
+    // キャッシュヒット: ローディング画面なしで即時表示
+    renderMyReservations(state.reservationsCache);
+    return;
+  }
   showScreen('loading');
   setLoadingMsg('予約を読み込み中...');
   try {
     const data = await jsonp({ action: 'getMyReservations', userId: state.userId });
-    renderMyReservations(data.reservations || []);
+    state.reservationsCache = data.reservations || [];
+    renderMyReservations(state.reservationsCache);
   } catch (e) {
     showError('予約情報の取得に失敗しました。\n' + formatError(e));
   }
+}
+
+// 予約操作（予約・変更・キャンセル）後にキャッシュを破棄する
+function invalidateReservationsCache() {
+  state.reservationsCache = null;
 }
 
 function renderMyReservations(reservations) {
@@ -1051,6 +1070,7 @@ async function doCancel(reservationId) {
   try {
     const data = await jsonp({ action: 'cancel', userId: state.userId, reservationId });
     if (data.status === 'ok') {
+      invalidateReservationsCache();  // キャンセルしたのでキャッシュを破棄
       showScreen('cancelled');
     } else {
       showToast(data.message || 'キャンセルに失敗しました');

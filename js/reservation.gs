@@ -420,15 +420,18 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
   }
 }
 
-// ── 初回データ一括取得 ────────────────────────────────────
-function getInitialData(userId) {
+// ── 起動時の軽量データ取得（分割読み込み版） ─────────────
+// 読むシート: イベント・日程・予約・ユーザー の4枚
+// 読まない:   予約一覧用の schedMap 結合は getMyReservations に委譲
+//
+// mode=myrsv の場合は events を返さず予約一覧のみを返す。
+// フロント側は起動直後に必要なデータだけ受け取り、
+// 予約一覧は「予約確認」タップ時に getMyReservations で遅延取得する。
+function getBootData(userId, mode) {
   if (!userId) return { status: API_STATUS.ERROR, message: 'userIdが必要です。' };
 
-  const allEvents   = getAllRows(SHEET.EVENT);
-  const allScheds   = getAllRows(SHEET.SCHED);
-  const allReserves = getAllRows(SHEET.RESERVE);
-  const allUsers    = getAllRows(SHEET.USER);
-
+  // ユーザー情報（全モード共通で必要）
+  const allUsers = getAllRows(SHEET.USER);
   const userRow  = allUsers.find(r => r[COL_USER.ID] === userId);
   const userInfo = userRow
     ? {
@@ -439,16 +442,30 @@ function getInitialData(userId) {
       }
     : { status: USER_STATUS.NONE };
 
+  // mode=myrsv は予約一覧だけ返す（イベントシートを読まない）
+  if (mode === 'myrsv') {
+    const rsvData = getMyReservations(userId);
+    return {
+      status:       API_STATUS.OK,
+      userInfo,
+      events:       [],
+      reservations: rsvData.reservations || [],
+    };
+  }
+
+  // 通常起動: イベント一覧のみ返す（予約一覧シートを読まない）
+  const allEvents   = getAllRows(SHEET.EVENT);
+  const allScheds   = getAllRows(SHEET.SCHED);
+  const allReserves = getAllRows(SHEET.RESERVE);
+
   const nowDate      = new Date();
   const activeScheds = allScheds.filter(s =>
     nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
     nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
   );
   const activeIds = new Set(activeScheds.map(s => s[COL_SCHED.EVENT_ID]));
-  const evtMap    = new Map(allEvents.map(e => [e[COL_EVENT.ID], e]));
-  const schedMap  = new Map(allScheds.map(s => [s[COL_SCHED.ID], s]));
 
-  // ループ前にユーザーの有効予約 schedId セットを構築
+  // alreadyBooked 判定用: ユーザーの有効予約 schedId セット
   const userActiveSchedIds = new Set(
     allReserves
       .filter(r => r[COL_RESERVE.USER_ID] === userId &&
@@ -460,7 +477,6 @@ function getInitialData(userId) {
     .filter(e => e[COL_EVENT.IS_ACTIVE] === true && activeIds.has(e[COL_EVENT.ID]))
     .map(e => {
       const eventScheds   = activeScheds.filter(s => s[COL_SCHED.EVENT_ID] === e[COL_EVENT.ID]);
-      // O(1) の Set.has で判定
       const alreadyBooked = eventScheds.length > 0 &&
         eventScheds.every(s => userActiveSchedIds.has(s[COL_SCHED.ID]));
       return {
@@ -472,24 +488,17 @@ function getInitialData(userId) {
       };
     });
 
-  const activeRsv = allReserves.filter(r =>
-    r[COL_RESERVE.USER_ID] === userId &&
-    r[COL_RESERVE.STATUS]  === RESERVE_STATUS.ACTIVE
-  );
-  const reservations = activeRsv.map(r => {
-    const sched = schedMap.get(r[COL_RESERVE.SCHED_ID]);
-    const evt   = evtMap.get(sched?.[COL_SCHED.EVENT_ID]);
-    return {
-      reservationId: r[COL_RESERVE.ID],
-      schedId:       r[COL_RESERVE.SCHED_ID],
-      eventId:       sched?.[COL_SCHED.EVENT_ID] || '',
-      eventName:     evt?.[COL_EVENT.NAME]        || '(不明なイベント)',
-      datetime:      sched ? formatDatetime(sched[COL_SCHED.DATETIME]) : '',
-      location:      sched?.[COL_SCHED.LOCATION]  || '',
-    };
-  });
+  return {
+    status:       API_STATUS.OK,
+    userInfo,
+    events,
+    reservations: [],  // 通常起動では返さない。必要時に getMyReservations で取得。
+  };
+}
 
-  return { status: API_STATUS.OK, userInfo, events, reservations };
+// 後方互換: getInitialData は getBootData に委譲
+function getInitialData(userId) {
+  return getBootData(userId, 'normal');
 }
 
 // ── イベント属性統計（管理者用） ──────────────────────────

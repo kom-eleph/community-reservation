@@ -48,7 +48,7 @@ const WRITE_ACTIONS = new Set([
 
 // 個人データを返す読み取り系 — LIFFトークン検証必須
 const AUTH_REQUIRED_ACTIONS = new Set([
-  'getMyReservations', 'getInitialData', 'getUserInfo',
+  'getMyReservations', 'getInitialData', 'getUserInfo', 'getBootData',
 ]);
 
 // ── GET リクエスト（フロントからの JSONP）────────────────
@@ -104,6 +104,9 @@ function doGet(e) {
         break;
       case 'getInitialData':
         result = getInitialData(e.parameter.userId);
+        break;
+      case 'getBootData':
+        result = getBootData(e.parameter.userId, e.parameter.mode);
         break;
       case 'getEventStats':
         result = getEventStats(e.parameter.eventId);
