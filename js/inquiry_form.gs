@@ -62,7 +62,7 @@ function handleInquiry(userId, text, replyToken) {
 
 // ── FAQシート検索 ─────────────────────────────────────────
 function searchFaq(normalizedText) {
-  const faqs = getAllRows(SHEET.FAQ)
+  const faqs = getMasterCachedRows(SHEET.FAQ)
     .filter(r => r[COL_FAQ.IS_ACTIVE] === true)
     .sort((a, b) => Number(a[COL_FAQ.PRIORITY]) - Number(b[COL_FAQ.PRIORITY]));
 
@@ -80,8 +80,8 @@ function buildDynamicAnswer(normalizedText) {
   if (!category) return null;
 
   const nowDate = new Date();
-  const events  = getAllRows(SHEET.EVENT).filter(r => r[COL_EVENT.IS_ACTIVE] === true);
-  const scheds  = getAllRows(SHEET.SCHED);
+  const events  = getMasterCachedRows(SHEET.EVENT).filter(r => r[COL_EVENT.IS_ACTIVE] === true);
+  const scheds  = getMasterCachedRows(SHEET.SCHED);
 
   const activeItems = events.map(ev => {
     const evId    = ev[COL_EVENT.ID];
@@ -153,6 +153,7 @@ function recordInquiry(userId, question, status, inquiryId) {
       now(),
       '',
     ]);
+    invalidateRowCache(SHEET.INQUIRY);
   } finally {
     lock.releaseLock();
   }

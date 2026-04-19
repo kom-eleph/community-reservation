@@ -165,33 +165,79 @@ const DATETIME_TIMEZONE     = 'Asia/Tokyo';
 // 共通ユーティリティ
 // ============================================================
 
-// ── リクエストスコープ SSキャッシュ ───────────────────────
-// GAS では SpreadsheetApp.openById() が高コストのため、
-// 1リクエスト内で1度だけ開いてオブジェクトを使い回す。
+// ── リクエストスコープキャッシュ ──────────────────────────
+// GAS では SpreadsheetApp.openById() と getDataRange().getValues() が
+// どちらも高コストのため、1リクエスト内ではそれぞれ1回だけ呼び出す。
+
+// スプレッドシートオブジェクトのキャッシュ
 let _ss = null;
 function getSS() {
   if (!_ss) _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   return _ss;
 }
 
+// 行データのキャッシュ（シート名 → 行配列）
+// 書き込み後に最新データが必要な場合は invalidateRowCache() を呼ぶ
+const _rowCache = {};
+
 function getSheet(name) {
   return getSS().getSheetByName(name);
 }
 
 function getAllRows(sheetName) {
+  if (_rowCache[sheetName]) return _rowCache[sheetName];
   const sheet = getSheet(sheetName);
   if (!sheet) {
     debugLog('シートが見つかりません: ' + sheetName);
     return [];
   }
   const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return [];
-  return values.slice(1);
+  _rowCache[sheetName] = values.length <= 1 ? [] : values.slice(1);
+  return _rowCache[sheetName];
+}
+
+// 書き込み後に特定シートのキャッシュを無効化する
+function invalidateRowCache(sheetName) {
+  delete _rowCache[sheetName];
 }
 
 function findRowIndex(sheetName, colIndex, value) {
   const rows = getAllRows(sheetName);
   return rows.findIndex(r => r[colIndex] === value);
+}
+
+// ── CacheService ヘルパー ────────────────────────────────
+// イベント・日程マスタのような更新頻度の低いデータを
+// リクエスト間でもキャッシュする（最大6時間）。
+// 管理者がマスタを更新した場合は clearMasterCache() を手動実行すること。
+const MASTER_CACHE_TTL_SEC = 300; // 5分
+const MASTER_CACHE_KEYS = [SHEET.EVENT, SHEET.SCHED, SHEET.FAQ];
+
+function getMasterCachedRows(sheetName) {
+  const cache = CacheService.getScriptCache();
+  const hit   = cache.get('rows_' + sheetName);
+  if (hit) {
+    const parsed = JSON.parse(hit);
+    // リクエストキャッシュにも展開して同一リクエスト内の再読みを防ぐ
+    _rowCache[sheetName] = parsed;
+    return parsed;
+  }
+  // キャッシュミス: シートを読んでキャッシュに保存
+  const rows = getAllRows(sheetName);
+  try {
+    cache.put('rows_' + sheetName, JSON.stringify(rows), MASTER_CACHE_TTL_SEC);
+  } catch (e) {
+    // シリアライズサイズ超過（100KB制限）の場合は無視してそのまま返す
+    debugLog('[getMasterCachedRows] キャッシュ保存失敗: ' + sheetName + ' ' + e.message);
+  }
+  return rows;
+}
+
+// マスタキャッシュを全クリア（管理者がマスタを更新した後に手動実行）
+function clearMasterCache() {
+  const cache = CacheService.getScriptCache();
+  MASTER_CACHE_KEYS.forEach(key => cache.remove('rows_' + key));
+  Logger.log('マスタキャッシュをクリアしました: ' + MASTER_CACHE_KEYS.join(', '));
 }
 
 // ── ID生成 ────────────────────────────────────────────────

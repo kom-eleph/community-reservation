@@ -13,36 +13,46 @@ function sanitizeString(value, maxLen) {
 // ── イベント一覧取得 ──────────────────────────────────────
 function getAvailableEvents(userId) {
   const nowDate  = new Date();
-  const events   = getAllRows(SHEET.EVENT).filter(r => r[COL_EVENT.IS_ACTIVE] === true);
-  const scheds   = getAllRows(SHEET.SCHED);
+  // イベント・日程マスタは CacheService でリクエスト間キャッシュ
+  const events   = getMasterCachedRows(SHEET.EVENT).filter(r => r[COL_EVENT.IS_ACTIVE] === true);
+  const scheds   = getMasterCachedRows(SHEET.SCHED);
   const reserves = getAllRows(SHEET.RESERVE);
 
-  const activeScheds = scheds.filter(s =>
-    nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
-    nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
-  );
+  // ACCEPT_START/END を一度だけパース（ループ外で変換）
+  const schedsWithDate = scheds.map(s => ({
+    s,
+    start: new Date(s[COL_SCHED.ACCEPT_START]),
+    end:   new Date(s[COL_SCHED.ACCEPT_END]),
+  }));
+  const activeScheds = schedsWithDate
+    .filter(({ start, end }) => nowDate >= start && nowDate <= end)
+    .map(({ s }) => s);
   const activeIds = new Set(activeScheds.map(s => s[COL_SCHED.EVENT_ID]));
+
+  // ユーザーの有効予約 schedId セットを一度だけ構築（O(1) 参照）
+  const userActiveSchedIds = userId
+    ? new Set(
+        reserves
+          .filter(r => r[COL_RESERVE.USER_ID] === userId &&
+                       r[COL_RESERVE.STATUS]  === RESERVE_STATUS.ACTIVE)
+          .map(r => r[COL_RESERVE.SCHED_ID])
+      )
+    : new Set();
 
   return {
     events: events
       .filter(e => activeIds.has(e[COL_EVENT.ID]))
       .map(e => {
-        const eventScheds = activeScheds.filter(s => s[COL_SCHED.EVENT_ID] === e[COL_EVENT.ID]);
-        const alreadyBooked = userId
-          ? eventScheds.length > 0 && eventScheds.every(s =>
-              reserves.some(r =>
-                r[COL_RESERVE.USER_ID]  === userId &&
-                r[COL_RESERVE.SCHED_ID] === s[COL_SCHED.ID] &&
-                r[COL_RESERVE.STATUS]   === RESERVE_STATUS.ACTIVE
-              )
-            )
-          : false;
+        const eventScheds   = activeScheds.filter(s => s[COL_SCHED.EVENT_ID] === e[COL_EVENT.ID]);
+        const alreadyBooked = userId &&
+          eventScheds.length > 0 &&
+          eventScheds.every(s => userActiveSchedIds.has(s[COL_SCHED.ID]));
         return {
           id:          e[COL_EVENT.ID],
           name:        e[COL_EVENT.NAME],
           description: e[COL_EVENT.DESCRIPTION],
           capacity:    e[COL_EVENT.CAPACITY],
-          alreadyBooked,
+          alreadyBooked: !!alreadyBooked,
         };
       })
   };
@@ -51,12 +61,14 @@ function getAvailableEvents(userId) {
 // ── 日程一覧取得 ──────────────────────────────────────────
 function getSchedulesByEvent(eventId, userId) {
   const nowDate  = new Date();
-  const events   = getAllRows(SHEET.EVENT);
-  const scheds   = getAllRows(SHEET.SCHED);
+  // イベント・日程マスタは CacheService でリクエスト間キャッシュ
+  const events   = getMasterCachedRows(SHEET.EVENT);
+  const scheds   = getMasterCachedRows(SHEET.SCHED);
   const reserves = getAllRows(SHEET.RESERVE);
   const waitlist = getAllRows(SHEET.WAITLIST);
   const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
 
+  // ACCEPT_START/END を一度だけパース
   const available = scheds.filter(s =>
     s[COL_SCHED.EVENT_ID] === eventId &&
     nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
@@ -107,8 +119,8 @@ function getSchedulesByEvent(eventId, userId) {
 // ── 自分の予約一覧 ────────────────────────────────────────
 function getMyReservations(userId) {
   const reserves = getAllRows(SHEET.RESERVE);
-  const scheds   = getAllRows(SHEET.SCHED);
-  const events   = getAllRows(SHEET.EVENT);
+  const scheds   = getMasterCachedRows(SHEET.SCHED);
+  const events   = getMasterCachedRows(SHEET.EVENT);
   const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
   const schedMap = new Map(scheds.map(s => [s[COL_SCHED.ID], s]));
 
@@ -143,8 +155,8 @@ function cancelReservationById(userId, reservationId) {
   }
 
   // 通知用情報をロック取得前に読む（書き込み範囲を最小化）
-  const scheds   = getAllRows(SHEET.SCHED);
-  const events   = getAllRows(SHEET.EVENT);
+  const scheds   = getMasterCachedRows(SHEET.SCHED);
+  const events   = getMasterCachedRows(SHEET.EVENT);
   const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
   const userInfo = getUserInfo(userId);
   const userName = userInfo.status === USER_STATUS.FOUND ? userInfo.name : '不明';
@@ -167,6 +179,7 @@ function cancelReservationById(userId, reservationId) {
     const schedId = rows[idx][COL_RESERVE.SCHED_ID];
     sheet.getRange(idx + 1, COL_RESERVE.STATUS       + 1).setValue(RESERVE_STATUS.CANCELLED);
     sheet.getRange(idx + 1, COL_RESERVE.CANCELLED_AT + 1).setValue(now());
+    invalidateRowCache(SHEET.RESERVE);
 
     const sched   = scheds.find(s => s[COL_SCHED.ID] === schedId);
     const evtName = evtMap.get(sched?.[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
@@ -194,8 +207,8 @@ function processReservation(userId, schedId, name) {
   lock.waitLock(LOCK_TIMEOUT_MS);
   try {
     const reserves = getAllRows(SHEET.RESERVE);
-    const scheds   = getAllRows(SHEET.SCHED);
-    const events   = getAllRows(SHEET.EVENT);
+    const scheds   = getMasterCachedRows(SHEET.SCHED);
+    const events   = getMasterCachedRows(SHEET.EVENT);
     const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
 
     const duplicate = reserves.find(r =>
@@ -223,6 +236,8 @@ function processReservation(userId, schedId, name) {
     getSheet(SHEET.RESERVE).appendRow([
       reservationId, userId, schedId, RESERVE_STATUS.ACTIVE, now(), '',
     ]);
+    // 書き込み後は RESERVE の行データキャッシュを無効化
+    invalidateRowCache(SHEET.RESERVE);
 
     const evtName = evtMap.get(sched[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
     const dt      = formatDatetime(sched[COL_SCHED.DATETIME]);
@@ -298,6 +313,7 @@ function registerUser(userId, name, birthdate, gender) {
     } else {
       sheet.appendRow([userId, name, birthdate, gender, now()]);
     }
+    invalidateRowCache(SHEET.USER);
     return { status: API_STATUS.OK };
   } finally {
     lock.releaseLock();
@@ -363,8 +379,8 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
   lock.waitLock(LOCK_TIMEOUT_MS);
   try {
     const reserves = getAllRows(SHEET.RESERVE);
-    const scheds   = getAllRows(SHEET.SCHED);
-    const events   = getAllRows(SHEET.EVENT);
+    const scheds   = getMasterCachedRows(SHEET.SCHED);
+    const events   = getMasterCachedRows(SHEET.EVENT);
     const evtMap   = new Map(events.map(e => [e[COL_EVENT.ID], e]));
 
     const oldIdx = reserves.findIndex(r =>
@@ -405,6 +421,7 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
     ]);
     getSheet(SHEET.RESERVE).getRange(oldIdx + 2, COL_RESERVE.STATUS + 1)
       .setValue(RESERVE_STATUS.CHANGED);
+    invalidateRowCache(SHEET.RESERVE);
 
     const evtName = evtMap.get(sched[COL_SCHED.EVENT_ID])?.[COL_EVENT.NAME] || '';
     const dt      = formatDatetime(sched[COL_SCHED.DATETIME]);
@@ -454,11 +471,13 @@ function getBootData(userId, mode) {
   }
 
   // 通常起動: イベント一覧のみ返す（予約一覧シートを読まない）
-  const allEvents   = getAllRows(SHEET.EVENT);
-  const allScheds   = getAllRows(SHEET.SCHED);
+  // イベント・日程マスタは CacheService でリクエスト間キャッシュ
+  const allEvents   = getMasterCachedRows(SHEET.EVENT);
+  const allScheds   = getMasterCachedRows(SHEET.SCHED);
   const allReserves = getAllRows(SHEET.RESERVE);
 
-  const nowDate      = new Date();
+  const nowDate = new Date();
+  // ACCEPT_START/END を一度だけパース
   const activeScheds = allScheds.filter(s =>
     nowDate >= new Date(s[COL_SCHED.ACCEPT_START]) &&
     nowDate <= new Date(s[COL_SCHED.ACCEPT_END])
@@ -504,9 +523,9 @@ function getInitialData(userId) {
 // ── イベント属性統計（管理者用） ──────────────────────────
 function getEventStats(eventId) {
   const reserves = getAllRows(SHEET.RESERVE);
-  const scheds   = getAllRows(SHEET.SCHED);
+  const scheds   = getMasterCachedRows(SHEET.SCHED);
   const users    = getAllRows(SHEET.USER);
-  const events   = getAllRows(SHEET.EVENT);
+  const events   = getMasterCachedRows(SHEET.EVENT);
 
   const targetSchedIds = scheds
     .filter(s => !eventId || s[COL_SCHED.EVENT_ID] === eventId)
@@ -573,6 +592,7 @@ function joinWaitlist(userId, schedId) {
     );
     if (already) return { status: API_STATUS.ERROR, message: 'すでにキャンセル待ちに登録済みです。' };
     sheet.appendRow([userId, schedId, WAITLIST_STATUS.WAITING, now(), '']);
+    invalidateRowCache(SHEET.WAITLIST);
     return { status: API_STATUS.OK };
   } finally {
     lock.releaseLock();
@@ -588,9 +608,9 @@ function promoteWaitlist(schedId, scheds, evtMap) {
   if (!schedId) return;
   try {
     // 渡されなかった場合は自前で読む（後方互換）
-    if (!scheds) scheds = getAllRows(SHEET.SCHED);
+    if (!scheds) scheds = getMasterCachedRows(SHEET.SCHED);
     if (!evtMap) {
-      const events = getAllRows(SHEET.EVENT);
+      const events = getMasterCachedRows(SHEET.EVENT);
       evtMap = new Map(events.map(e => [e[COL_EVENT.ID], e]));
     }
 
@@ -622,6 +642,7 @@ function promoteWaitlist(schedId, scheds, evtMap) {
     const waitUserId = rows[idx][COL_WAITLIST.USER_ID];
     sheet.getRange(idx + 1, COL_WAITLIST.STATUS      + 1).setValue(WAITLIST_STATUS.NOTIFIED);
     sheet.getRange(idx + 1, COL_WAITLIST.NOTIFIED_AT + 1).setValue(now());
+    invalidateRowCache(SHEET.WAITLIST);
 
     const dt = formatDatetime(sched[COL_SCHED.DATETIME]);
     pushMessage(waitUserId,

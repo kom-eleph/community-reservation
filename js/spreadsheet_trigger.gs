@@ -50,6 +50,7 @@ function onInquiryEdit(e) {
 
   // F列（対応日時）を自動記入
   sheet.getRange(row, COL_INQUIRY.HANDLED_AT + 1).setValue(now());
+  invalidateRowCache(SHEET.INQUIRY);
 
   pushMessage(userId,
     '担当者が対応を完了しました。\n' +
