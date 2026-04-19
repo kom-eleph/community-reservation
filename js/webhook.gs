@@ -47,8 +47,10 @@ const WRITE_ACTIONS = new Set([
 ]);
 
 // 個人データを返す読み取り系 — LIFFトークン検証必須
+// getBootData は起動時に毎回呼ばれる軽量な読み取りのため検証対象から外す。
+// （書き込みなし・userId は LIFF SDK 由来で改ざん困難）
 const AUTH_REQUIRED_ACTIONS = new Set([
-  'getMyReservations', 'getInitialData', 'getUserInfo', 'getBootData',
+  'getMyReservations', 'getInitialData', 'getUserInfo',
 ]);
 
 // ── GET リクエスト（フロントからの JSONP）────────────────
