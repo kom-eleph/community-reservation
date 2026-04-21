@@ -108,7 +108,7 @@ function doGet(e) {
         result = getInitialData(e.parameter.userId);
         break;
       case 'getBootData':
-        result = getBootData(e.parameter.userId, e.parameter.mode);
+        result = getBootData(e.parameter.userId, e.parameter.mode, e.parameter.userInfoCached);
         break;
       case 'getEventStats':
         result = getEventStats(e.parameter.eventId);
