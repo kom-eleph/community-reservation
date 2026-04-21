@@ -596,24 +596,20 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   setLoadingMsg('データを読み込み中...');
   const mode = new URLSearchParams(location.search).get('mode');
 
-  // sessionStorage から userInfo を復元（USER シートの読み込みをスキップ可能に）
-  const cachedUserInfo = loadCachedUserInfo(state.userId);
-  if (cachedUserInfo) state.userInfo = cachedUserInfo;
-
   try {
     // getBootData: mode を渡して必要最小限のデータのみ取得
-    // userInfoCached=1 のとき GAS 側は USER シートを読まない
+    // 通常起動 → イベント一覧 + ユーザー情報
+    // mode=myrsv → 予約一覧 + ユーザー情報
     const init = await jsonp({
       action: 'getBootData',
       userId: state.userId,
       mode:   mode || 'normal',
-      userInfoCached: cachedUserInfo ? '1' : '0',
     });
 
-    // userInfo は参加者情報フォームの前回値補完に使う
-    // GAS から返ってきた場合のみ更新（キャッシュヒット時は init.userInfo が null）
-    if (init.userInfo) {
-      state.userInfo = init.userInfo;
+    // userInfo を state と sessionStorage の両方に保存
+    // sessionStorage はフォームの前回値補完に使う（タブを閉じると自動消去）
+    state.userInfo = init.userInfo;
+    if (init.userInfo && init.userInfo.status === 'found') {
       saveCachedUserInfo(state.userId, init.userInfo);
     }
 
