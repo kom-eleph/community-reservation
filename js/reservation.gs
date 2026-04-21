@@ -573,20 +573,24 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
 // mode=myrsv の場合は events を返さず予約一覧のみを返す。
 // フロント側は起動直後に必要なデータだけ受け取り、
 // 予約一覧は「予約確認」タップ時に getMyReservations で遅延取得する。
-function getBootData(userId, mode) {
+function getBootData(userId, mode, userInfoCached) {
   if (!userId) return { status: API_STATUS.ERROR, message: 'userIdが必要です。' };
 
-  // ユーザー情報（全モード共通で必要）
-  const allUsers = getAllRows(SHEET.USER);
-  const userRow  = allUsers.find(r => r[COL_USER.ID] === userId);
-  const userInfo = userRow
-    ? {
-        status:    USER_STATUS.FOUND,
-        name:      userRow[COL_USER.NAME],
-        birthdate: formatBirthdate(userRow[COL_USER.BIRTHDATE]),
-        gender:    userRow[COL_USER.GENDER],
-      }
-    : { status: USER_STATUS.NONE };
+  // userInfoCached='1' のとき: フロントの sessionStorage にキャッシュ済み
+  // → USER シートを読まずに null を返す（フロント側がキャッシュを使う）
+  let userInfo = null;
+  if (userInfoCached !== '1') {
+    const allUsers = getAllRows(SHEET.USER);
+    const userRow  = allUsers.find(r => r[COL_USER.ID] === userId);
+    userInfo = userRow
+      ? {
+          status:    USER_STATUS.FOUND,
+          name:      userRow[COL_USER.NAME],
+          birthdate: formatBirthdate(userRow[COL_USER.BIRTHDATE]),
+          gender:    userRow[COL_USER.GENDER],
+        }
+      : { status: USER_STATUS.NONE };
+  }
 
   // mode=myrsv は予約一覧だけ返す（イベントシートを読まない）
   if (mode === 'myrsv') {
