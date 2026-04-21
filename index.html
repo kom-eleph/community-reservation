@@ -7,9 +7,12 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>イベント予約</title>
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<!-- フォントを preload で並列読み込み（@import によるパースブロックを回避） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js" defer></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
 
   * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
   body {
@@ -485,7 +488,8 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNU
 
 // ── 通信・UX タイマー ──────────────────────────────────────
 const CONFIG = {
-  JSONP_TIMEOUT_MS:          20000,
+  // keepAlive トリガー設定済みを前提に 8秒に短縮（コールドスタート最大5秒+余裕3秒）
+  JSONP_TIMEOUT_MS:           8000,
   SCHED_REFRESH_INTERVAL_MS: 30000,
   TOAST_DURATION_MS:          3000,
   TOAST_ERROR_DURATION_MS:    5000,
@@ -493,6 +497,23 @@ const CONFIG = {
 };
 
 // ── アプリ状態 ──────────────────────────────────────────────
+// ── userInfo sessionStorage キャッシュ ───────────────────
+// キー: "ui_{userId}" でユーザーごとに分離
+// sessionStorage はタブを閉じると自動消去されるため永続リスクなし
+function loadCachedUserInfo(userId) {
+  try {
+    const raw = sessionStorage.getItem('ui_' + userId);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) { return null; }
+}
+function saveCachedUserInfo(userId, info) {
+  try { sessionStorage.setItem('ui_' + userId, JSON.stringify(info)); } catch (_) {}
+}
+function clearCachedUserInfo(userId) {
+  try { sessionStorage.removeItem('ui_' + userId); } catch (_) {}
+}
+
 const state = {
   userId:                '',
   userName:              '',
@@ -575,14 +596,26 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   setLoadingMsg('データを読み込み中...');
   const mode = new URLSearchParams(location.search).get('mode');
 
+  // sessionStorage から userInfo を復元（USER シートの読み込みをスキップ可能に）
+  const cachedUserInfo = loadCachedUserInfo(state.userId);
+  if (cachedUserInfo) state.userInfo = cachedUserInfo;
+
   try {
     // getBootData: mode を渡して必要最小限のデータのみ取得
-    // 通常起動 → イベント一覧 + ユーザー情報（予約一覧は含まない）
-    // mode=myrsv → 予約一覧 + ユーザー情報（イベント一覧は含まない）
-    const init = await jsonp({ action: 'getBootData', userId: state.userId, mode: mode || 'normal' });
+    // userInfoCached=1 のとき GAS 側は USER シートを読まない
+    const init = await jsonp({
+      action: 'getBootData',
+      userId: state.userId,
+      mode:   mode || 'normal',
+      userInfoCached: cachedUserInfo ? '1' : '0',
+    });
 
     // userInfo は参加者情報フォームの前回値補完に使う
-    state.userInfo = init.userInfo;
+    // GAS から返ってきた場合のみ更新（キャッシュヒット時は init.userInfo が null）
+    if (init.userInfo) {
+      state.userInfo = init.userInfo;
+      saveCachedUserInfo(state.userId, init.userInfo);
+    }
 
     if (mode === 'myrsv') {
       renderMyReservations(init.reservations);
@@ -648,6 +681,8 @@ function submitAttendee() {
 
   // state.userInfo に今回入力値を保持（確認画面表示 & 送信で使用）
   state.userInfo = { ...state.userInfo, name, birthdate, gender };
+  // sessionStorage も更新（次回起動時のキャッシュとして使う）
+  saveCachedUserInfo(state.userId, state.userInfo);
 
   showConfirm(state.selectedSched);
 }
