@@ -7,7 +7,6 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>イベント予約</title>
-<!-- フォントを preload で並列読み込み（@import によるパースブロックを回避） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
@@ -488,7 +487,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNU
 
 // ── 通信・UX タイマー ──────────────────────────────────────
 const CONFIG = {
-  // keepAlive トリガー設定済みを前提に 8秒に短縮（コールドスタート最大5秒+余裕3秒）
+  // keepAlive トリガー設定済みを前提に短縮（コールドスタート最大5秒+余裕3秒）
   JSONP_TIMEOUT_MS:           8000,
   SCHED_REFRESH_INTERVAL_MS: 30000,
   TOAST_DURATION_MS:          3000,
@@ -497,23 +496,6 @@ const CONFIG = {
 };
 
 // ── アプリ状態 ──────────────────────────────────────────────
-// ── userInfo sessionStorage キャッシュ ───────────────────
-// キー: "ui_{userId}" でユーザーごとに分離
-// sessionStorage はタブを閉じると自動消去されるため永続リスクなし
-function loadCachedUserInfo(userId) {
-  try {
-    const raw = sessionStorage.getItem('ui_' + userId);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (_) { return null; }
-}
-function saveCachedUserInfo(userId, info) {
-  try { sessionStorage.setItem('ui_' + userId, JSON.stringify(info)); } catch (_) {}
-}
-function clearCachedUserInfo(userId) {
-  try { sessionStorage.removeItem('ui_' + userId); } catch (_) {}
-}
-
 const state = {
   userId:                '',
   userName:              '',
@@ -529,6 +511,7 @@ const state = {
   currentScreen:         'loading',
   // 予約一覧キャッシュ（遅延取得・予約操作後に invalidate する）
   reservationsCache:     null,
+  _loadingStartedAt:     null,  // loading 固まり検知用
 };
 
 // ── JSONP ──────────────────────────────────────────────────
@@ -563,9 +546,13 @@ function jsonp(params) {
   });
 }
 
-function formatError(err) {
+function formatError(err, context) {
   if (err.message === 'TIMEOUT') {
-    return 'サーバーの応答がありませんでした（20秒）。\nアクセスが集中している可能性があります。\n少し待ってから「再読み込み」をお試しください。';
+    // 予約送信中のタイムアウトは処理済みの可能性があることを伝える
+    if (context === 'reserve') {
+      return '通信がタイムアウトしました。\n予約が完了している可能性があります。\nLINEのトークに完了通知が届いているか確認してください。\n届いていない場合は再度お試しください。';
+    }
+    return 'サーバーの応答がありませんでした。\n少し待ってから「再読み込み」をお試しください。';
   }
   if (err.message === 'NETWORK') {
     return '通信エラーが発生しました。\nWi-Fiまたは通信状態を確認してから「再読み込み」をお試しください。';
@@ -598,20 +585,12 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
 
   try {
     // getBootData: mode を渡して必要最小限のデータのみ取得
-    // 通常起動 → イベント一覧 + ユーザー情報
-    // mode=myrsv → 予約一覧 + ユーザー情報
-    const init = await jsonp({
-      action: 'getBootData',
-      userId: state.userId,
-      mode:   mode || 'normal',
-    });
+    // 通常起動 → イベント一覧 + ユーザー情報（予約一覧は含まない）
+    // mode=myrsv → 予約一覧 + ユーザー情報（イベント一覧は含まない）
+    const init = await jsonp({ action: 'getBootData', userId: state.userId, mode: mode || 'normal' });
 
-    // userInfo を state と sessionStorage の両方に保存
-    // sessionStorage はフォームの前回値補完に使う（タブを閉じると自動消去）
+    // userInfo は参加者情報フォームの前回値補完に使う
     state.userInfo = init.userInfo;
-    if (init.userInfo && init.userInfo.status === 'found') {
-      saveCachedUserInfo(state.userId, init.userInfo);
-    }
 
     if (mode === 'myrsv') {
       renderMyReservations(init.reservations);
@@ -623,6 +602,27 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   }
 
 }).catch(err => showError('初期化エラー: ' + err.message));
+
+// ── バックグラウンド復帰時の処理 ────────────────────────
+// スマホでLINEから戻るなど、タブが再表示されたときに応じた処理を行う
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+
+  // ① 日程選択画面: 残席をサイレント更新（バックグラウンド中に席が埋まった可能性）
+  if (state.currentScreen === 'sched' && state.selectedEvent) {
+    refreshSchedView(true);
+    return;
+  }
+
+  // ② ローディング中に戻ってきた: 10秒以上経過していればリロードを促す
+  if (state.currentScreen === 'loading') {
+    if (!state._loadingStartedAt) {
+      state._loadingStartedAt = Date.now();
+    } else if (Date.now() - state._loadingStartedAt > 10000) {
+      showError('読み込みがタイムアウトしました。\n再読み込みしてください。');
+    }
+  }
+});
 
 // ── 参加者情報入力フォームを開く ─────────────────────────
 // 日程選択後に呼ぶ。シート登録済みの場合は値をセットしてバナーを表示する。
@@ -677,8 +677,6 @@ function submitAttendee() {
 
   // state.userInfo に今回入力値を保持（確認画面表示 & 送信で使用）
   state.userInfo = { ...state.userInfo, name, birthdate, gender };
-  // sessionStorage も更新（次回起動時のキャッシュとして使う）
-  saveCachedUserInfo(state.userId, state.userInfo);
 
   showConfirm(state.selectedSched);
 }
@@ -752,7 +750,7 @@ function renderSchedules(schedules, ev) {
   // [B-2修正] changingReservationId の有無で戻り先を判定（changeFromEventId は削除）
   document.getElementById('sched-back-btn').onclick =
     state.changingReservationId
-      ? () => loadMyReservations()
+      ? () => { state.changingReservationId = null; loadMyReservations(); }
       : () => showScreen('event');
 
   const list = document.getElementById('sched-list');
@@ -1005,14 +1003,8 @@ async function submitReservation() {
       btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
     }
   } catch (e) {
-    if (e.message === 'TIMEOUT' || e.message === 'NETWORK') {
-      showToast(e.message === 'TIMEOUT'
-        ? 'サーバーの応答がありません。少し待って再度お試しください'
-        : '通信エラーが発生しました。電波状況を確認してください'
-      , CONFIG.TOAST_ERROR_DURATION_MS);
-    } else {
-      showToast('エラー: ' + e.message, CONFIG.TOAST_ERROR_DURATION_MS);
-    }
+    // タイムアウト時は予約が完了している可能性をユーザーに伝える
+    showToast(formatError(e, 'reserve'), CONFIG.TOAST_ERROR_DURATION_MS);
     btn.disabled    = false;
     btn.textContent = state.changingReservationId ? '変更を確定する' : 'この内容で予約する';
   } finally {
@@ -1130,9 +1122,13 @@ function showScreen(name) {
   });
   state.currentScreen = name;
   // sched 以外に遷移したときだけタイマーを止める。
-  // sched への startSchedRefresh は loadSchedules のみが責任を持つ。
-  // attendee/confirm からの「戻る」では既存タイマーをそのまま引き継ぐ。
   if (name !== 'sched') stopSchedRefresh();
+  // loading 画面に入った時刻を記録（バックグラウンド復帰時の固まり検知用）
+  if (name === 'loading') {
+    state._loadingStartedAt = Date.now();
+  } else {
+    state._loadingStartedAt = null;
+  }
 }
 
 function setLoadingMsg(msg) {
