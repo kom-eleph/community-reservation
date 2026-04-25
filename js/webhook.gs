@@ -47,10 +47,12 @@ const WRITE_ACTIONS = new Set([
 ]);
 
 // 個人データを返す読み取り系 — LIFFトークン検証必須
-// getBootData は起動時に毎回呼ばれる軽量な読み取りのため検証対象から外す。
-// （書き込みなし・userId は LIFF SDK 由来で改ざん困難）
+// getBootData は起動時に毎回呼ばれるため速度維持を優先し検証対象から外す。
+// 代わりに getBootData 側で userInfo を返さない設計とし個人情報漏洩を防ぐ。
+// userInfo はフォーム表示時に getUserInfo（認証済み）で遅延取得する。
+// [SEC-2] getEventStats: 参加者統計（年代・性別）を含むため認証必須に変更
 const AUTH_REQUIRED_ACTIONS = new Set([
-  'getMyReservations', 'getInitialData', 'getUserInfo',
+  'getMyReservations', 'getInitialData', 'getUserInfo', 'getEventStats',
 ]);
 
 // ── GET リクエスト（フロントからの JSONP）────────────────
@@ -65,6 +67,12 @@ function doGet(e) {
   if (WRITE_ACTIONS.has(action) || AUTH_REQUIRED_ACTIONS.has(action)) {
     const verified = verifyLiffToken(e.parameter.liffToken);
     if (!verified) return authErrorResponse(callback);
+    // [SEC-1] トークンの持ち主(sub)とリクエストのuserIdが一致するか確認
+    // これがないと自分の有効トークンで他人のuserIdを指定できてしまう
+    if (verified.sub !== e.parameter.userId) {
+      debugLog('[doGet] userId不一致 token.sub=' + verified.sub + ' param=' + e.parameter.userId);
+      return authErrorResponse(callback);
+    }
   }
 
   try {
@@ -77,7 +85,8 @@ function doGet(e) {
         result = getSchedulesByEvent(e.parameter.eventId, e.parameter.userId);
         break;
       case 'reserve':
-        result = processReservation(e.parameter.userId, e.parameter.schedId, e.parameter.name);
+        // [SEC-5] 旧アクション: reserveWithAttendee に統合済みのため無効化
+        result = { status: 'error', message: 'このアクションは廃止されました。' };
         break;
       case 'getMyReservations':
         result = getMyReservations(e.parameter.userId);
@@ -97,12 +106,8 @@ function doGet(e) {
         result = getUserInfo(e.parameter.userId);
         break;
       case 'change':
-        result = changeReservation(
-          e.parameter.userId,
-          e.parameter.oldReservationId,
-          e.parameter.newSchedId,
-          e.parameter.name
-        );
+        // [SEC-5] 旧アクション: changeWithAttendee に統合済みのため無効化
+        result = { status: 'error', message: 'このアクションは廃止されました。' };
         break;
       case 'getInitialData':
         result = getInitialData(e.parameter.userId);

@@ -584,16 +584,19 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
   const mode = new URLSearchParams(location.search).get('mode');
 
   try {
-    // getBootData: mode を渡して必要最小限のデータのみ取得
-    // 通常起動 → イベント一覧 + ユーザー情報（予約一覧は含まない）
-    // mode=myrsv → 予約一覧 + ユーザー情報（イベント一覧は含まない）
+    // [SEC-3] getBootData は個人情報を返さない設計に変更。
+    // userInfo（名前・生年月日・性別）はフォーム表示時に getUserInfo（認証済み）で遅延取得。
+    // mode=myrsv の予約一覧は getMyReservations（認証済み）で別途取得。
     const init = await jsonp({ action: 'getBootData', userId: state.userId, mode: mode || 'normal' });
 
-    // userInfo は参加者情報フォームの前回値補完に使う
+    // userInfo はユーザー登録有無フラグのみ（個人情報は含まれない）
     state.userInfo = init.userInfo;
 
     if (mode === 'myrsv') {
-      renderMyReservations(init.reservations);
+      // 予約一覧は認証済みアクションで取得
+      setLoadingMsg('予約情報を読み込み中...');
+      const rsvData = await jsonp({ action: 'getMyReservations', userId: state.userId });
+      renderMyReservations(rsvData.reservations || []);
     } else {
       renderEvents(init.events, null);
     }
@@ -625,11 +628,26 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ── 参加者情報入力フォームを開く ─────────────────────────
-// 日程選択後に呼ぶ。シート登録済みの場合は値をセットしてバナーを表示する。
-function showAttendeeForm(sched) {
+// [SEC-3] 個人情報（名前・生年月日・性別）はここで初めて getUserInfo（認証済み）を
+// 呼んで取得する。getBootData では個人情報を返さない設計のため。
+// すでに state.userInfo に name が入っている場合（同セッション内2回目以降）は
+// APIを呼ばずキャッシュを使う。
+async function showAttendeeForm(sched) {
   state.selectedSched = sched;
 
-  const info    = state.userInfo || {};
+  // userInfo がキャッシュ済みでない場合のみ getUserInfo を呼ぶ
+  if (!state.userInfo || !state.userInfo.name) {
+    try {
+      const fetched = await jsonp({ action: 'getUserInfo', userId: state.userId });
+      // getUserInfo は { status, name, birthdate, gender } を返す
+      state.userInfo = fetched;
+    } catch (_) {
+      // 取得失敗時は空フォームで続行
+      state.userInfo = { status: 'none' };
+    }
+  }
+
+  const info     = state.userInfo || {};
   const hasSaved = info.status === 'found' && info.name && info.birthdate && info.gender;
 
   // 登録済み情報があればフォームにセット、なければ空欄
@@ -794,7 +812,7 @@ function renderSchedules(schedules, ev) {
           <span class="sched-badge badge-ok">${remainLabel}</span>
           <div class="date">${escHtml(s.datetime)}</div>
           <div class="info">📍 ${escHtml(s.location)}</div>`;
-        btn.onclick = () => showAttendeeForm(s);
+        btn.onclick = () => showAttendeeForm(s).catch(err => showToast('情報の取得に失敗しました'));
       }
       list.appendChild(btn);
     });

@@ -573,29 +573,28 @@ function changeReservation(userId, oldReservationId, newSchedId, name) {
 // mode=myrsv の場合は events を返さず予約一覧のみを返す。
 // フロント側は起動直後に必要なデータだけ受け取り、
 // 予約一覧は「予約確認」タップ時に getMyReservations で遅延取得する。
+// [SEC-3] getBootData は速度維持のため認証不要のまま据え置く。
+// 代わりに個人情報（名前・生年月日・性別）を返さない設計とし情報漏洩を防ぐ。
+// userInfo はフォーム表示時にフロントが getUserInfo（認証必須）で遅延取得する。
+// mode=myrsv（予約一覧）は個人の予約情報を含むため getMyReservations（認証必須）
+// 経由に変更し、getBootData からは返さない。
 function getBootData(userId, mode) {
   if (!userId) return { status: API_STATUS.ERROR, message: 'userIdが必要です。' };
 
-  // ユーザー情報（全モード共通で必要）
-  const allUsers = getAllRows(SHEET.USER);
-  const userRow  = allUsers.find(r => r[COL_USER.ID] === userId);
-  const userInfo = userRow
-    ? {
-        status:    USER_STATUS.FOUND,
-        name:      userRow[COL_USER.NAME],
-        birthdate: formatBirthdate(userRow[COL_USER.BIRTHDATE]),
-        gender:    userRow[COL_USER.GENDER],
-      }
-    : { status: USER_STATUS.NONE };
+  // ── ユーザー登録有無フラグのみ返す（個人情報は含めない）──────
+  // 名前・生年月日・性別は認証必須の getUserInfo で取得すること。
+  const allUsers   = getAllRows(SHEET.USER);
+  const userRow    = allUsers.find(r => r[COL_USER.ID] === userId);
+  const userStatus = userRow ? USER_STATUS.FOUND : USER_STATUS.NONE;
 
-  // mode=myrsv は予約一覧だけ返す（イベントシートを読まない）
+  // mode=myrsv: 予約一覧は認証必須の getMyReservations で取得するよう案内
+  // getBootData からは返さない（個人の予約情報を認証なしで返さないため）
   if (mode === 'myrsv') {
-    const rsvData = getMyReservations(userId);
     return {
       status:       API_STATUS.OK,
-      userInfo,
+      userInfo:     { status: userStatus },
       events:       [],
-      reservations: rsvData.reservations || [],
+      reservations: [],  // フロントは別途 getMyReservations（認証済み）で取得
     };
   }
 
@@ -639,7 +638,7 @@ function getBootData(userId, mode) {
 
   return {
     status:       API_STATUS.OK,
-    userInfo,
+    userInfo:     { status: userStatus },  // 個人情報は含めない
     events,
     reservations: [],  // 通常起動では返さない。必要時に getMyReservations で取得。
   };
