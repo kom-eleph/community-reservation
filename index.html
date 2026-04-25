@@ -57,9 +57,19 @@
   .loading-text { font-size: 13px; color: #9ca3af; }
 
   /* ── Error ── */
-  .error-wrap { text-align: center; padding: 36px 16px; }
-  .error-icon { font-size: 40px; margin-bottom: 12px; }
-  .error-msg { color: #ef4444; font-size: 14px; line-height: 1.6; white-space: pre-line; margin-bottom: 20px; }
+  .error-wrap { text-align: center; padding: 20px 16px; }
+  .error-icon { font-size: 36px; margin-bottom: 10px; }
+  .error-msg {
+    color: #ef4444; font-size: 14px; line-height: 1.7; white-space: pre-line;
+    margin-bottom: 20px;
+    max-height: 40vh;       /* 画面の40%を超えたらスクロール */
+    overflow-y: auto;
+    text-align: left;
+    background: #fef2f2;
+    border-radius: 8px;
+    padding: 12px 14px;
+    word-break: break-word; /* 長い英数字も折り返す */
+  }
   .error-actions { display: flex; flex-direction: column; gap: 10px; }
 
   /* ── Buttons ── */
@@ -488,7 +498,7 @@ const GAS_URL = 'https://script.google.com/macros/s/AKfycbw2udOG7cW1XConkIKQGWNU
 // ── 通信・UX タイマー ──────────────────────────────────────
 const CONFIG = {
   // keepAlive トリガー設定済みを前提に短縮（コールドスタート最大5秒+余裕3秒）
-  JSONP_TIMEOUT_MS:           8000,
+  JSONP_TIMEOUT_MS:          10000,
   SCHED_REFRESH_INTERVAL_MS: 30000,
   TOAST_DURATION_MS:          3000,
   TOAST_ERROR_DURATION_MS:    5000,
