@@ -1,0 +1,22 @@
+
+# env / secrets
+.env
+.env.*
+server/.env
+server/.env.*
+server/.env.db
+
+# node
+node_modules/
+server/node_modules/
+
+# logs
+*.log
+npm-debug.log*
+
+# mac
+.DS_Store
+
+# docker/db
+postgres_data/
+server/postgres_data/
