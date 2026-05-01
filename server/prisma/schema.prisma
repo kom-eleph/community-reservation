@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id              String     @id
+  name            String
+  description     String?
+  defaultCapacity Int?
+  isActive        Boolean    @default(true)
+  feeText         String?
+  belongings      String?
+  note            String?
+  schedules       Schedule[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("events")
+}
+
+model Schedule {
+  id               String        @id
+  eventId          String
+  startsAt         DateTime
+  acceptStartAt    DateTime?
+  acceptEndAt      DateTime?
+  capacityOverride Int?
+  location         String?
+  note             String?
+  event            Event         @relation(fields: [eventId], references: [id])
+  reservations     Reservation[]
+  waitlists        Waitlist[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([eventId])
+  @@index([startsAt])
+  @@map("schedules")
+}
+
+model User {
+  lineUserId    String        @id
+  name          String?
+  birthdate     DateTime?
+  gender        String?
+  registeredAt  DateTime?
+  reservations  Reservation[]
+  waitlists     Waitlist[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("users")
+}
+
+model Reservation {
+  id           String   @id
+  lineUserId   String
+  scheduleId   String
+  status       String
+  reservedAt   DateTime?
+  cancelledAt  DateTime?
+  user         User     @relation(fields: [lineUserId], references: [lineUserId])
+  schedule     Schedule @relation(fields: [scheduleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([lineUserId])
+  @@index([scheduleId])
+  @@index([status])
+  @@map("reservations")
+}
+
+model Waitlist {
+  id           Int      @id @default(autoincrement())
+  lineUserId   String
+  scheduleId   String
+  status       String
+  registeredAt DateTime?
+  notifiedAt   DateTime?
+  user         User     @relation(fields: [lineUserId], references: [lineUserId])
+  schedule     Schedule @relation(fields: [scheduleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([lineUserId])
+  @@index([scheduleId])
+  @@index([status])
+  @@map("waitlists")
+}
+
+model Faq {
+  id        Int      @id @default(autoincrement())
+  category  String?
+  question  String
+  answer    String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("faqs")
+}
+
+model Inquiry {
+  id          Int      @id @default(autoincrement())
+  lineUserId  String?
+  name        String?
+  message     String
+  status      String   @default("open")
+  receivedAt  DateTime?
+  closedAt    DateTime?
+  memo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@map("inquiries")
+}

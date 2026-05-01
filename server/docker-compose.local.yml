@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: community_reservation_db_local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reservation_user
+      POSTGRES_PASSWORD: reservation_pass_local
+      POSTGRES_DB: community_reservation
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_local:
