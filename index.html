@@ -617,10 +617,10 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
     // [SEC-3] getBootData は個人情報を返さない設計に変更。
     // userInfo（名前・生年月日・性別）はフォーム表示時に getUserInfo（認証済み）で遅延取得。
     // mode=myrsv の予約一覧は getMyReservations（認証済み）で別途取得。
-    const init = await jsonp({ action: 'getBootData', userId: state.userId, mode: mode || 'normal' });
+    const init = await fetchJson('/api/events');
 
     // userInfo はユーザー登録有無フラグのみ（個人情報は含まれない）
-    state.userInfo = init.userInfo;
+    state.userInfo = { status: 'none' };
 
     if (mode === 'myrsv') {
       // 予約一覧は認証済みアクションで取得
@@ -736,7 +736,7 @@ async function loadEvents(filterEventId) {
   // [B-2修正] changeFromEventId を統一して管理
   state.changeFromEventId = filterEventId || null;
   try {
-    const data = await jsonp({ action: 'getEvents', userId: state.userId });
+    const data = await fetchJson('/api/events');
     renderEvents(data.events || [], filterEventId);
   } catch (e) {
     showError('イベントの取得に失敗しました。\n' + formatError(e));
@@ -782,7 +782,7 @@ async function loadSchedules(ev) {
   stopSchedRefresh();
 
   try {
-    const data = await jsonp({ action: 'getSchedules', eventId: ev.id, userId: state.userId });
+    const data = await fetchJson(`/api/schedules?eventId=${encodeURIComponent(ev.id)}&userId=${encodeURIComponent(state.userId)}`);
     renderSchedules(data.schedules || [], ev);
     // 新しい日程画面を開いたときのみタイマーを起動する
     startSchedRefresh();
@@ -915,11 +915,7 @@ async function refreshSchedView(silent = false) {
   if (btn) { btn.disabled = true; btn.textContent = '更新中...'; }
 
   try {
-    const data = await jsonp({
-      action:  'getSchedules',
-      eventId: state.selectedEvent.id,
-      userId:  state.userId,
-    });
+    const data = await fetchJson(`/api/schedules?eventId=${encodeURIComponent(state.selectedEvent.id)}&userId=${encodeURIComponent(state.userId)}`);
     renderSchedules(data.schedules || [], state.selectedEvent);
     if (!silent) showToast('残席数を更新しました');
   } catch (e) {
