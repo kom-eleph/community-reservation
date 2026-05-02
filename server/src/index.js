@@ -23,7 +23,17 @@ app.get("/api/events", async (req, res, next) => {
       orderBy: { id: "asc" },
     });
 
-    res.json({ status: "ok", events });
+    const result = events.map((event) => ({
+      id: event.id,
+      name: event.name,
+      description: event.description,
+      defaultCapacity: event.defaultCapacity,
+      feeText: event.feeText,
+      belongings: event.belongings,
+      note: event.note,
+    }));
+
+    res.json({ status: "ok", events: result });
   } catch (error) {
     next(error);
   }
@@ -31,13 +41,27 @@ app.get("/api/events", async (req, res, next) => {
 
 app.get("/api/schedules", async (req, res, next) => {
   try {
+    const { eventId, userId } = req.query;
+
     const schedules = await prisma.schedule.findMany({
+      where: {
+        ...(eventId ? { eventId } : {}),
+      },
       include: {
         event: true,
         reservations: {
           where: { status: "active" },
-          select: { id: true },
+          select: { id: true, lineUserId: true },
         },
+        waitlists: userId
+          ? {
+              where: {
+                lineUserId: userId,
+                status: "active",
+              },
+              select: { id: true },
+            }
+          : false,
       },
       orderBy: { startsAt: "asc" },
     });
@@ -45,19 +69,28 @@ app.get("/api/schedules", async (req, res, next) => {
     const result = schedules.map((schedule) => {
       const capacity =
         schedule.capacityOverride ?? schedule.event.defaultCapacity ?? 0;
+      const reservedCount = schedule.reservations.length;
+      const remaining = Math.max(capacity - reservedCount, 0);
 
       return {
         id: schedule.id,
+        schedId: schedule.id,
         eventId: schedule.eventId,
         eventName: schedule.event.name,
         startsAt: schedule.startsAt,
+        datetime: formatDateTimeForDisplay(schedule.startsAt),
         acceptStartAt: schedule.acceptStartAt,
         acceptEndAt: schedule.acceptEndAt,
         capacity,
-        reservedCount: schedule.reservations.length,
-        remainingCount: Math.max(capacity - schedule.reservations.length, 0),
-        location: schedule.location,
-        note: schedule.note,
+        reservedCount,
+        remaining,
+        remainingCount: remaining,
+        location: schedule.location || "",
+        note: schedule.note || "",
+        alreadyBooked: userId
+          ? schedule.reservations.some((r) => r.lineUserId === userId)
+          : false,
+        onWaitlist: userId ? (schedule.waitlists?.length || 0) > 0 : false,
       };
     });
 
