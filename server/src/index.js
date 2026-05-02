@@ -506,6 +506,105 @@ app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
   }
 });
 
+function formatDateOnlyForInput(date) {
+  if (!date) return "";
+
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
+  return formatter.format(date);
+}
+
+app.get("/api/user-info", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        status: "error",
+        message: "userIdが不足しています",
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { lineUserId: userId },
+    });
+
+    if (!user || !user.name) {
+      return res.json({ status: "none" });
+    }
+
+    res.json({
+      status: "found",
+      name: user.name,
+      birthdate: formatDateOnlyForInput(user.birthdate),
+      gender: user.gender || "",
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/waitlist", async (req, res, next) => {
+  try {
+    const { userId, schedId } = req.body;
+
+    if (!userId || !schedId) {
+      return res.status(400).json({
+        status: "error",
+        message: "必須項目が不足しています",
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const schedule = await tx.schedule.findUnique({
+        where: { id: schedId },
+      });
+
+      if (!schedule) {
+        return {
+          status: "error",
+          message: "日程が見つかりません",
+        };
+      }
+
+      const existing = await tx.waitlist.findFirst({
+        where: {
+          lineUserId: userId,
+          scheduleId: schedId,
+          status: "active",
+        },
+      });
+
+      if (existing) {
+        return {
+          status: "ok",
+          message: "すでにキャンセル待ち登録済みです",
+        };
+      }
+
+      await tx.waitlist.create({
+        data: {
+          lineUserId: userId,
+          scheduleId: schedId,
+          status: "active",
+          registeredAt: new Date(),
+        },
+      });
+
+      return { status: "ok" };
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
