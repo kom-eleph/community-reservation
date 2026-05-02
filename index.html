@@ -625,7 +625,7 @@ liff.init({ liffId: LIFF_ID }).then(async () => {
     if (mode === 'myrsv') {
       // 予約一覧は認証済みアクションで取得
       setLoadingMsg('予約情報を読み込み中...');
-      const rsvData = await jsonp({ action: 'getMyReservations', userId: state.userId });
+      const rsvData = await fetchJson(`/api/my-reservations?userId=${encodeURIComponent(state.userId)}`);
       renderMyReservations(rsvData.reservations || []);
     } else {
       renderEvents(init.events, null);
@@ -995,14 +995,16 @@ async function submitReservation() {
 
     if (state.changingReservationId) {
       // 参加者情報更新＋日程変更を1リクエストで完結
-      data = await jsonp({
-        action:           'changeWithAttendee',
-        userId:           state.userId,
-        oldReservationId: state.changingReservationId,
-        newSchedId:       state.selectedSched.schedId,
-        name:             info.name,
-        birthdate:        info.birthdate,
-        gender:           info.gender,
+      data = await fetchJson(`/api/reservations/${encodeURIComponent(state.changingReservationId)}/change`, {
+        method: 'POST',
+        body: JSON.stringify({
+          userId:    state.userId,
+          newSchedId: state.selectedSched.schedId,
+          name:      info.name,
+          birthdate: info.birthdate,
+          gender:    info.gender,
+          liffToken: state.liffAccessToken,
+        }),
       });
     } else {
       // 参加者情報登録＋予約を1リクエストで完結
@@ -1076,7 +1078,7 @@ async function loadMyReservations(forceRefresh = false) {
   showScreen('loading');
   setLoadingMsg('予約を読み込み中...');
   try {
-    const data = await jsonp({ action: 'getMyReservations', userId: state.userId });
+    const data = await fetchJson(`/api/my-reservations?userId=${encodeURIComponent(state.userId)}`);
     state.reservationsCache = data.reservations || [];
     renderMyReservations(state.reservationsCache);
   } catch (e) {
@@ -1142,7 +1144,13 @@ async function doCancel(reservationId) {
   showScreen('loading');
   setLoadingMsg('キャンセル処理中...');
   try {
-    const data = await jsonp({ action: 'cancel', userId: state.userId, reservationId });
+    const data = await fetchJson(`/api/reservations/${encodeURIComponent(reservationId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: state.userId,
+        liffToken: state.liffAccessToken,
+      }),
+    });
     if (data.status === 'ok') {
       invalidateReservationsCache();  // キャンセルしたのでキャッシュを破棄
       showScreen('cancelled');

@@ -200,6 +200,279 @@ app.post("/api/reservations", async (req, res, next) => {
   }
 });
 
+function formatDateTimeForDisplay(date) {
+  if (!date) return "";
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+app.get("/api/my-reservations", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        status: "error",
+        message: "userIdが不足しています",
+      });
+    }
+
+    const reservations = await prisma.reservation.findMany({
+      where: {
+        lineUserId: userId,
+        status: "active",
+      },
+      include: {
+        schedule: {
+          include: {
+            event: true,
+          },
+        },
+      },
+      orderBy: {
+        reservedAt: "desc",
+      },
+    });
+
+    const result = reservations.map((r) => ({
+      reservationId: r.id,
+      eventId: r.schedule.eventId,
+      eventName: r.schedule.event.name,
+      schedId: r.scheduleId,
+      datetime: formatDateTimeForDisplay(r.schedule.startsAt),
+      location: r.schedule.location || "",
+      reservedAt: r.reservedAt,
+    }));
+
+    res.json({
+      status: "ok",
+      reservations: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
+  try {
+    const { reservationId } = req.params;
+    const { userId } = req.body;
+
+    if (!reservationId || !userId) {
+      return res.status(400).json({
+        status: "error",
+        message: "必須項目が不足しています",
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUnique({
+        where: { id: reservationId },
+      });
+
+      if (!reservation) {
+        return {
+          status: "error",
+          message: "予約が見つかりません",
+        };
+      }
+
+      if (reservation.lineUserId !== userId) {
+        return {
+          status: "error",
+          message: "この予約はキャンセルできません",
+        };
+      }
+
+      if (reservation.status !== "active") {
+        return {
+          status: "error",
+          message: "すでにキャンセル済みです",
+        };
+      }
+
+      await tx.reservation.update({
+        where: { id: reservationId },
+        data: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+        },
+      });
+
+      return {
+        status: "ok",
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
+  try {
+    const { reservationId } = req.params;
+    const { userId, newSchedId, name, birthdate, gender } = req.body;
+
+    if (!reservationId || !userId || !newSchedId || !name) {
+      return res.status(400).json({
+        status: "error",
+        message: "必須項目が不足しています",
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const oldReservation = await tx.reservation.findUnique({
+        where: { id: reservationId },
+      });
+
+      if (!oldReservation) {
+        return {
+          status: "error",
+          message: "変更元の予約が見つかりません",
+        };
+      }
+
+      if (oldReservation.lineUserId !== userId) {
+        return {
+          status: "error",
+          message: "この予約は変更できません",
+        };
+      }
+
+      if (oldReservation.status !== "active") {
+        return {
+          status: "error",
+          message: "この予約は変更できません",
+        };
+      }
+
+      if (oldReservation.scheduleId === newSchedId) {
+        return {
+          status: "ok",
+          reservationId: oldReservation.id,
+          message: "同じ日程です",
+        };
+      }
+
+      const newSchedule = await tx.schedule.findUnique({
+        where: { id: newSchedId },
+        include: { event: true },
+      });
+
+      if (!newSchedule) {
+        return {
+          status: "error",
+          message: "変更先の日程が見つかりません",
+        };
+      }
+
+      const now = new Date();
+
+      if (newSchedule.acceptStartAt && now < newSchedule.acceptStartAt) {
+        return {
+          status: "error",
+          message: "受付開始前です",
+        };
+      }
+
+      if (newSchedule.acceptEndAt && now > newSchedule.acceptEndAt) {
+        return {
+          status: "error",
+          message: "受付は終了しました",
+        };
+      }
+
+      await tx.user.upsert({
+        where: { lineUserId: userId },
+        update: {
+          name,
+          birthdate: birthdate ? new Date(birthdate) : null,
+          gender: gender || null,
+        },
+        create: {
+          lineUserId: userId,
+          name,
+          birthdate: birthdate ? new Date(birthdate) : null,
+          gender: gender || null,
+          registeredAt: now,
+        },
+      });
+
+      const duplicate = await tx.reservation.findFirst({
+        where: {
+          lineUserId: userId,
+          scheduleId: newSchedId,
+          status: "active",
+        },
+      });
+
+      if (duplicate) {
+        return {
+          status: "ok",
+          reservationId: duplicate.id,
+          message: "すでに予約済みの日程です",
+        };
+      }
+
+      const capacity =
+        newSchedule.capacityOverride ?? newSchedule.event.defaultCapacity ?? 0;
+
+      const activeCount = await tx.reservation.count({
+        where: {
+          scheduleId: newSchedId,
+          status: "active",
+        },
+      });
+
+      if (capacity > 0 && activeCount >= capacity) {
+        return {
+          status: "full",
+          message: "満席です",
+        };
+      }
+
+      const newReservationId = createReservationId();
+
+      await tx.reservation.update({
+        where: { id: reservationId },
+        data: {
+          status: "modified",
+          cancelledAt: now,
+        },
+      });
+
+      await tx.reservation.create({
+        data: {
+          id: newReservationId,
+          lineUserId: userId,
+          scheduleId: newSchedId,
+          status: "active",
+          reservedAt: now,
+        },
+      });
+
+      return {
+        status: "ok",
+        reservationId: newReservationId,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
