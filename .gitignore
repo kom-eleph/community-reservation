@@ -20,3 +20,6 @@ npm-debug.log*
 # docker/db
 postgres_data/
 server/postgres_data/
+
+# local import csv
+server/imports/
