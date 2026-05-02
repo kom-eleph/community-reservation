@@ -46,6 +46,9 @@ app.get("/api/schedules", async (req, res, next) => {
     const schedules = await prisma.schedule.findMany({
       where: {
         ...(eventId ? { eventId } : {}),
+        startsAt: {
+          gte: new Date(),
+        },
       },
       include: {
         event: true,
