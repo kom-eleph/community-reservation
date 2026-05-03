@@ -453,7 +453,7 @@
 
 <div id="s-inquiry" class="screen">
   <header>
-    <button class="back" onclick="safeClose()">×</button>
+    <button class="back" onclick="showScreen('event')">←</button>
     <h1>お問い合わせ</h1>
   </header>
 
@@ -465,9 +465,11 @@
     <textarea id="inq-message"
       placeholder="お問い合わせ内容をご入力ください"
       style="width:100%; height:180px; padding:12px; border:1px solid #e5e7eb; border-radius:8px; font-size:16px;"></textarea>
-
     <button class="btn-green" style="margin-top:16px;" onclick="submitInquiry()">
       送信する
+    </button>
+    <button class="btn-gray" style="margin-top:10px;" onclick="safeClose()">
+      閉じる
     </button>
   </main>
 </div>
