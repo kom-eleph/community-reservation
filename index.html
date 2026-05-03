@@ -1167,7 +1167,7 @@ function startChange(reservationId, eventId, eventName) {
 
 // ── ユーティリティ ─────────────────────────────────────────
 function showScreen(name) {
-  ['loading','error','attendee','event','sched','confirm','done','myrsv','cancelled','waitlisted'].forEach(s => {
+  ['loading','error','attendee','event','sched','confirm','done','myrsv','cancelled','waitlisted','inquiry'].forEach(s => {
     const el = document.getElementById('s-' + s);
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
