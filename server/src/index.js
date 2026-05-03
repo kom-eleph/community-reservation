@@ -1,10 +1,30 @@
 const express = require("express");
 const cors = require("cors");
+const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
 require("dotenv").config();
 
 const app = express();
 const prisma = new PrismaClient();
+
+function verifyLineSignature(body, signature) {
+  const channelSecret = process.env.LINE_CHANNEL_SECRET;
+
+  if (!channelSecret || !signature) {
+    return false;
+  }
+
+  const hash = crypto
+    .createHmac("sha256", channelSecret)
+    .update(body)
+    .digest("base64");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(hash),
+    Buffer.from(signature)
+  );
+}
+
 async function pushLineMessage(lineUserId, text) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
@@ -45,7 +65,11 @@ function formatScheduleText(schedule) {
 }
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString("utf8");
+  },
+}));
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -732,6 +756,49 @@ app.post("/api/inquiries", async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+app.post("/api/webhook/line", async (req, res) => {
+  try {
+    const signature = req.headers["x-line-signature"];
+
+    if (!verifyLineSignature(req.rawBody || "", signature)) {
+      return res.status(401).json({ status: "error" });
+    }
+
+    const events = req.body.events || [];
+    const inquiryUrl = process.env.LIFF_INQUIRY_URL;
+
+    for (const ev of events) {
+      if (ev.type === "message" && ev.message?.type === "text") {
+        const replyToken = ev.replyToken;
+
+        await fetch("https://api.line.me/v2/bot/message/reply", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
+          },
+          body: JSON.stringify({
+            replyToken,
+            messages: [
+              {
+                type: "text",
+                text:
+                  "お問い合わせは以下のフォームからお願いします。\n" +
+                  inquiryUrl,
+              },
+            ],
+          }),
+        });
+      }
+    }
+
+    res.json({ status: "ok" });
+  } catch (e) {
+    console.error(e);
+    res.json({ status: "error" });
   }
 });
 
