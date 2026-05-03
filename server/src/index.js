@@ -5,6 +5,44 @@ require("dotenv").config();
 
 const app = express();
 const prisma = new PrismaClient();
+async function pushLineMessage(lineUserId, text) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+
+  if (!token) {
+    console.warn("LINE_CHANNEL_ACCESS_TOKEN is not set. Skip push message.");
+    return;
+  }
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      to: lineUserId,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("LINE push failed:", response.status, body);
+  }
+}
+
+function formatScheduleText(schedule) {
+  return [
+    schedule.event.name,
+    formatDateTimeForDisplay(schedule.startsAt),
+    schedule.location ? `📍 ${schedule.location}` : "",
+  ].filter(Boolean).join("\n");
+}
 
 app.use(cors());
 app.use(express.json());
@@ -227,9 +265,14 @@ app.post("/api/reservations", async (req, res, next) => {
       return {
         status: "ok",
         reservationId,
+        notificationText: `予約が完了しました\n\n${formatScheduleText(schedule)}`,
       };
     });
 
+    if (result.status === "ok" && result.notificationText) {
+      await pushLineMessage(userId, result.notificationText);
+    }
+    delete result.notificationText;
     res.json(result);
   } catch (error) {
     next(error);
@@ -312,6 +355,13 @@ app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
     const result = await prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id: reservationId },
+        include: {
+          schedule: {
+            include: {
+              event: true,
+            },
+          },
+        },
       });
 
       if (!reservation) {
@@ -345,9 +395,14 @@ app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
 
       return {
         status: "ok",
+        notificationText: `予約をキャンセルしました\n\n${formatScheduleText(reservation.schedule)}`,
       };
     });
 
+    if (result.status === "ok" && result.notificationText) {
+      await pushLineMessage(userId, result.notificationText);
+    }
+    delete result.notificationText;
     res.json(result);
   } catch (error) {
     next(error);
@@ -500,9 +555,14 @@ app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
       return {
         status: "ok",
         reservationId: newReservationId,
+        notificationText: `予約を変更しました\n\n${formatScheduleText(newSchedule)}`,
       };
     });
 
+    if (result.status === "ok" && result.notificationText) {
+      await pushLineMessage(userId, result.notificationText);
+    }
+    delete result.notificationText;
     res.json(result);
   } catch (error) {
     next(error);
