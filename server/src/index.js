@@ -668,6 +668,59 @@ app.post("/api/waitlist", async (req, res, next) => {
   }
 });
 
+app.post("/api/inquiries", async (req, res, next) => {
+  try {
+    const { userId, name, message } = req.body;
+
+    if (!message || !String(message).trim()) {
+      return res.status(400).json({
+        status: "error",
+        message: "お問い合わせ内容を入力してください",
+      });
+    }
+
+    if (String(message).length > 1000) {
+      return res.status(400).json({
+        status: "error",
+        message: "お問い合わせ内容は1000文字以内で入力してください",
+      });
+    }
+
+    const inquiry = await prisma.inquiry.create({
+      data: {
+        lineUserId: userId || null,
+        name: name || null,
+        message: String(message).trim(),
+        status: "open",
+        receivedAt: new Date(),
+      },
+    });
+
+    const adminUserId = process.env.ADMIN_LINE_USER_ID;
+
+    if (adminUserId) {
+      await pushLineMessage(
+        adminUserId,
+        [
+          "📩 新しい問い合わせ",
+          "",
+          `名前: ${name || "未入力"}`,
+          `LINE User ID: ${userId || "不明"}`,
+          "",
+          String(message).trim(),
+        ].join("\n")
+      );
+    }
+
+    res.json({
+      status: "ok",
+      inquiryId: inquiry.id,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
