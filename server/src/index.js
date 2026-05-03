@@ -802,6 +802,31 @@ app.post("/api/webhook/line", async (req, res) => {
   }
 });
 
+app.get("/api/admin/inquiries", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const inquiries = await prisma.inquiry.findMany({
+      orderBy: { receivedAt: "desc" },
+      take: 100,
+    });
+
+    res.json({
+      status: "ok",
+      inquiries,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
