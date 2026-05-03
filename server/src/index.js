@@ -712,6 +712,20 @@ app.post("/api/inquiries", async (req, res, next) => {
       );
     }
 
+    if (userId) {
+      await pushLineMessage(
+        userId,
+        [
+          "お問い合わせを受け付けました。",
+          "",
+          "内容：",
+          String(message).trim(),
+          "",
+          "確認後、順次ご返信します。"
+        ].join("\n")
+      );
+    }
+
     res.json({
       status: "ok",
       inquiryId: inquiry.id,
