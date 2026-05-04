@@ -974,6 +974,78 @@ app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
   }
 });
 
+app.post("/api/admin/schedules", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const {
+      id,
+      eventId,
+      startsAt,
+      acceptStartAt,
+      acceptEndAt,
+      capacityOverride,
+      location,
+      note,
+    } = req.body;
+
+    if (!id || !eventId || !startsAt) {
+      return res.status(400).json({
+        status: "error",
+        message: "日程ID、イベント、開催日時は必須です",
+      });
+    }
+
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      return res.status(400).json({
+        status: "error",
+        message: "イベントが見つかりません",
+      });
+    }
+
+    const schedule = await prisma.schedule.create({
+      data: {
+        id,
+        eventId,
+        startsAt: new Date(startsAt),
+        acceptStartAt: acceptStartAt ? new Date(acceptStartAt) : null,
+        acceptEndAt: acceptEndAt ? new Date(acceptEndAt) : null,
+        capacityOverride:
+          capacityOverride === "" || capacityOverride == null
+            ? null
+            : Number(capacityOverride),
+        location: location || null,
+        note: note || null,
+      },
+    });
+
+    res.json({
+      status: "ok",
+      schedule,
+    });
+  } catch (error) {
+    if (error.code === "P2002") {
+      return res.status(400).json({
+        status: "error",
+        message: "同じ日程IDがすでに存在します",
+      });
+    }
+
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
