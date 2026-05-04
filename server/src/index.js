@@ -871,6 +871,72 @@ app.get("/api/admin/reservations", async (req, res, next) => {
   }
 });
 
+app.post("/api/admin/reservations/:id/cancel", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const reservationId = req.params.id;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUnique({
+        where: { id: reservationId },
+        include: {
+          schedule: {
+            include: {
+              event: true,
+            },
+          },
+        },
+      });
+
+      if (!reservation) {
+        return {
+          status: "error",
+          message: "予約が見つかりません",
+        };
+      }
+
+      if (reservation.status !== "active") {
+        return {
+          status: "error",
+          message: "この予約はすでに有効ではありません",
+        };
+      }
+
+      await tx.reservation.update({
+        where: { id: reservationId },
+        data: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+        },
+      });
+
+      return {
+        status: "ok",
+        lineUserId: reservation.lineUserId,
+        notificationText: `予約をキャンセルしました\n\n${formatScheduleText(reservation.schedule)}`,
+      };
+    });
+
+    if (result.status === "ok" && result.lineUserId && result.notificationText) {
+      await pushLineMessage(result.lineUserId, result.notificationText);
+    }
+
+    delete result.notificationText;
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
   try {
     const adminKey = req.headers["x-admin-api-key"];
