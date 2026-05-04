@@ -827,6 +827,50 @@ app.get("/api/admin/inquiries", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/reservations", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const reservations = await prisma.reservation.findMany({
+      orderBy: { reservedAt: "desc" },
+      take: 200,
+      include: {
+        user: true,
+        schedule: {
+          include: {
+            event: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      status: "ok",
+      reservations: reservations.map((r) => ({
+        reservationId: r.id,
+        status: r.status,
+        lineUserId: r.lineUserId,
+        name: r.user?.name || "",
+        eventName: r.schedule?.event?.name || "",
+        scheduleId: r.scheduleId,
+        datetime: r.schedule ? formatDateTimeForDisplay(r.schedule.startsAt) : "",
+        location: r.schedule?.location || "",
+        reservedAt: r.reservedAt,
+        cancelledAt: r.cancelledAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
   try {
     const adminKey = req.headers["x-admin-api-key"];
