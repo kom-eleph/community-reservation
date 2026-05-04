@@ -827,6 +827,43 @@ app.get("/api/admin/inquiries", async (req, res, next) => {
   }
 });
 
+app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({
+        status: "error",
+        message: "Invalid inquiry id",
+      });
+    }
+
+    const inquiry = await prisma.inquiry.update({
+      where: { id },
+      data: {
+        status: "closed",
+        closedAt: new Date(),
+      },
+    });
+
+    res.json({
+      status: "ok",
+      inquiry,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({
     status: "error",
