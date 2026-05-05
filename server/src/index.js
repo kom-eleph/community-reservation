@@ -282,13 +282,6 @@ app.post("/api/reservations", async (req, res, next) => {
 
       const now = new Date();
 
-      if (schedule.acceptStartAt && now < schedule.acceptStartAt) {
-        return {
-          status: "error",
-          message: "受付開始前です",
-        };
-      }
-
       if (schedule.acceptEndAt && now > schedule.acceptEndAt) {
         return {
           status: "error",
@@ -564,13 +557,6 @@ app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
 
       const now = new Date();
 
-      if (newSchedule.acceptStartAt && now < newSchedule.acceptStartAt) {
-        return {
-          status: "error",
-          message: "受付開始前です",
-        };
-      }
-
       if (newSchedule.acceptEndAt && now > newSchedule.acceptEndAt) {
         return {
           status: "error",
@@ -841,8 +827,34 @@ app.post("/api/webhook/line", async (req, res) => {
     const events = req.body.events || [];
     const inquiryUrl = process.env.LIFF_INQUIRY_URL;
 
+    // リッチメニューの postback イベントは無視（自動応答しない）
+    // テキストメッセージもリッチメニュー由来の定型文は無視する
+    const RICH_MENU_POSTBACK_DATA = [
+      "action=about",
+      "about",
+      "1dayx_about",
+    ];
+    const IGNORE_KEYWORDS = [
+      "1 day xとは？",
+      "1 day xとは",
+      "1 day Xとは？",
+      "1 day Xとは",
+      "1dayx",
+    ];
+
     for (const ev of events) {
+      // postback イベントはすべて無視（リッチメニューのアクション）
+      if (ev.type === "postback") continue;
+
       if (ev.type === "message" && ev.message?.type === "text") {
+        const text = (ev.message.text || "").trim();
+
+        // リッチメニュー由来のテキストは無視
+        const isIgnored = IGNORE_KEYWORDS.some(kw =>
+          text.toLowerCase() === kw.toLowerCase()
+        );
+        if (isIgnored) continue;
+
         const replyToken = ev.replyToken;
 
         await fetch("https://api.line.me/v2/bot/message/reply", {
