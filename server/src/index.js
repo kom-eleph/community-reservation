@@ -160,7 +160,11 @@ app.get("/api/schedules", async (req, res, next) => {
           gte: new Date(),
         },
         // noteに[非公開]が入っている日程はユーザーに見せない
-        NOT: { note: { startsWith: "[非公開]" } },
+        // note が null のレコードは除外対象外なので OR で明示する
+        OR: [
+          { note: null },
+          { note: { not: { startsWith: "[非公開]" } } },
+        ],
       },
       include: {
         event: true,
