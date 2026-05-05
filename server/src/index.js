@@ -185,6 +185,29 @@ function createReservationId() {
   return `RSV-${ymd}-${rand}`;
 }
 
+async function createScheduleId(tx) {
+  const latest = await tx.schedule.findMany({
+    where: {
+      id: {
+        startsWith: "SCH-",
+      },
+    },
+    orderBy: {
+      id: "desc",
+    },
+    take: 1,
+    select: {
+      id: true,
+    },
+  });
+
+  const latestId = latest[0]?.id || "SCH-000";
+  const latestNumber = Number(latestId.replace("SCH-", ""));
+  const nextNumber = Number.isFinite(latestNumber) ? latestNumber + 1 : 1;
+
+  return `SCH-${String(nextNumber).padStart(3, "0")}`;
+}
+
 app.post("/api/reservations", async (req, res, next) => {
   try {
     const { userId, schedId, name, birthdate, gender } = req.body;
@@ -986,7 +1009,6 @@ app.post("/api/admin/schedules", async (req, res, next) => {
     }
 
     const {
-      id,
       eventId,
       startsAt,
       acceptStartAt,
@@ -996,10 +1018,10 @@ app.post("/api/admin/schedules", async (req, res, next) => {
       note,
     } = req.body;
 
-    if (!id || !eventId || !startsAt) {
+    if (!eventId || !startsAt) {
       return res.status(400).json({
         status: "error",
-        message: "日程ID、イベント、開催日時は必須です",
+        message: "イベント、開催日時は必須です",
       });
     }
 
@@ -1014,7 +1036,10 @@ app.post("/api/admin/schedules", async (req, res, next) => {
       });
     }
 
-    const schedule = await prisma.schedule.create({
+  const schedule = await prisma.$transaction(async (tx) => {
+    const id = await createScheduleId(tx);
+
+    return tx.schedule.create({
       data: {
         id,
         eventId,
@@ -1029,11 +1054,12 @@ app.post("/api/admin/schedules", async (req, res, next) => {
         note: note || null,
       },
     });
+  });
 
-    res.json({
-      status: "ok",
-      schedule,
-    });
+  res.json({
+    status: "ok",
+    schedule,
+  });
   } catch (error) {
     if (error.code === "P2002") {
       return res.status(400).json({
