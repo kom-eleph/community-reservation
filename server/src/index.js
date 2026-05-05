@@ -159,12 +159,8 @@ app.get("/api/schedules", async (req, res, next) => {
         startsAt: {
           gte: new Date(),
         },
-        // noteに[非公開]が入っている日程はユーザーに見せない
-        // note が null のレコードは除外対象外なので OR で明示する
-        OR: [
-          { note: null },
-          { note: { not: { startsWith: "[非公開]" } } },
-        ],
+        // 非公開フラグが立っている日程はユーザーに見せない
+        isHidden: false,
       },
       include: {
         event: true,
@@ -1031,7 +1027,7 @@ app.get("/api/admin/schedules", adminRateLimit, requireAdminKey, async (req, res
         remainingCount: Math.max(capacity - reservedCount, 0),
         location: s.location || "",
         note: s.note || "",
-        isHidden: (s.note || "").startsWith("[非公開]"),
+        isHidden: s.isHidden ?? false,
         createdAt: s.createdAt,
       };
     });
@@ -1130,10 +1126,10 @@ app.post("/api/admin/schedules/:id/hide", adminRateLimit, requireAdminKey, async
       return res.status(404).json({ status: "error", message: "日程が見つかりません" });
     }
 
-    // note フィールドに "[非公開]" プレフィックスを付与して非公開管理
+    // isHidden フラグを true に設定して非公開化
     await prisma.schedule.update({
       where: { id },
-      data: { note: `[非公開] ${schedule.note || ""}`.trim() },
+      data: { isHidden: true },
     });
 
     let notifiedCount = 0;

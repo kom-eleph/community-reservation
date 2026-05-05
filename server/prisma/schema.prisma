@@ -32,6 +32,7 @@ model Schedule {
   capacityOverride Int?
   location         String?
   note             String?
+  isHidden         Boolean       @default(false)
   event            Event         @relation(fields: [eventId], references: [id])
   reservations     Reservation[]
   waitlists        Waitlist[]
@@ -40,6 +41,7 @@ model Schedule {
 
   @@index([eventId])
   @@index([startsAt])
+  @@index([isHidden])
   @@map("schedules")
 }
 
