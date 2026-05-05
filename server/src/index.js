@@ -159,6 +159,10 @@ app.get("/api/schedules", async (req, res, next) => {
         startsAt: {
           gte: new Date(),
         },
+        // 非公開フラグが立っている日程はユーザーに見せない
+        isHidden: { not: true },
+        // noteに[非公開]が入っている旧フォールバック分も除外
+        NOT: { note: { startsWith: "[非公開]" } },
       },
       include: {
         event: true,
