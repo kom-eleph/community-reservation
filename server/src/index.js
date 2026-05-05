@@ -97,6 +97,7 @@ const allowedOrigins = [
   "https://1dayx.jp",
   "https://www.1dayx.jp",
   "https://reservation.1dayx.jp",
+  "https://kom-eleph.github.io",   // LIFF（予約フロント）
   ...(process.env.NODE_ENV !== "production"
     ? ["http://localhost:3000", "http://localhost:3001"]
     : []),
