@@ -997,6 +997,66 @@ app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
   }
 });
 
+app.get("/api/admin/schedules", async (req, res, next) => {
+  try {
+    const adminKey = req.headers["x-admin-api-key"];
+
+    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+      return res.status(401).json({
+        status: "error",
+        message: "Unauthorized",
+      });
+    }
+
+    const schedules = await prisma.schedule.findMany({
+      orderBy: { startsAt: "asc" },
+      include: {
+        event: true,
+        reservations: {
+          where: { status: "active" },
+          select: { id: true },
+        },
+        waitlists: {
+          where: { status: "active" },
+          select: { id: true },
+        },
+      },
+    });
+
+    const result = schedules.map((schedule) => {
+      const capacity =
+        schedule.capacityOverride ?? schedule.event.defaultCapacity ?? 0;
+      const reservedCount = schedule.reservations.length;
+      const waitlistCount = schedule.waitlists.length;
+      const remainingCount = Math.max(capacity - reservedCount, 0);
+
+      return {
+        id: schedule.id,
+        eventId: schedule.eventId,
+        eventName: schedule.event.name,
+        startsAt: schedule.startsAt,
+        datetime: formatDateTimeForDisplay(schedule.startsAt),
+        acceptStartAt: schedule.acceptStartAt,
+        acceptEndAt: schedule.acceptEndAt,
+        capacity,
+        reservedCount,
+        waitlistCount,
+        remainingCount,
+        location: schedule.location || "",
+        note: schedule.note || "",
+        createdAt: schedule.createdAt,
+      };
+    });
+
+    res.json({
+      status: "ok",
+      schedules: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/admin/schedules", async (req, res, next) => {
   try {
     const adminKey = req.headers["x-admin-api-key"];
