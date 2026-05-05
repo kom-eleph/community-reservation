@@ -4,6 +4,34 @@ const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
 require("dotenv").config();
 
+// ── レート制限（管理API総当り防止）────────────────────────
+const adminRateLimitMap = new Map();
+function adminRateLimit(req, res, next) {
+  const ip = req.ip || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15分
+  const maxRequests = 60;
+
+  const record = adminRateLimitMap.get(ip) || { count: 0, resetAt: now + windowMs };
+
+  if (now > record.resetAt) {
+    record.count = 0;
+    record.resetAt = now + windowMs;
+  }
+
+  record.count += 1;
+  adminRateLimitMap.set(ip, record);
+
+  if (record.count > maxRequests) {
+    return res.status(429).json({
+      status: "error",
+      message: "リクエストが多すぎます。しばらく待ってから再試行してください。",
+    });
+  }
+
+  next();
+}
+
 const app = express();
 const prisma = new PrismaClient();
 
@@ -64,7 +92,26 @@ function formatScheduleText(schedule) {
   ].filter(Boolean).join("\n");
 }
 
-app.use(cors());
+// ── CORS：許可オリジンを明示的に制限 ────────────────────
+const allowedOrigins = [
+  "https://1dayx.jp",
+  "https://www.1dayx.jp",
+  "https://reservation.1dayx.jp",
+  ...(process.env.NODE_ENV !== "production"
+    ? ["http://localhost:3000", "http://localhost:3001"]
+    : []),
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS: origin not allowed"));
+    }
+  },
+  credentials: true,
+}));
+
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf.toString("utf8");
@@ -825,55 +872,60 @@ app.post("/api/webhook/line", async (req, res) => {
   }
 });
 
-app.get("/api/admin/inquiries", async (req, res, next) => {
+// ── 管理者認証ミドルウェア（全 /api/admin/* で共用）──────
+function requireAdminKey(req, res, next) {
+  const adminKey = req.headers["x-admin-api-key"];
+  if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
+    return res.status(401).json({ status: "error", message: "Unauthorized" });
+  }
+  next();
+}
+
+// ════════════════════════════════════════════════════════════
+// 管理者 API（全ルート共通：adminRateLimit + requireAdminKey）
+// ════════════════════════════════════════════════════════════
+
+// ── 問い合わせ一覧 ────────────────────────────────────────
+app.get("/api/admin/inquiries", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
-    }
-
     const inquiries = await prisma.inquiry.findMany({
       orderBy: { receivedAt: "desc" },
       take: 100,
     });
-
-    res.json({
-      status: "ok",
-      inquiries,
-    });
+    res.json({ status: "ok", inquiries });
   } catch (error) {
     next(error);
   }
 });
 
-app.get("/api/admin/reservations", async (req, res, next) => {
+// ── 問い合わせ対応済み ────────────────────────────────────
+app.post("/api/admin/inquiries/:id/close", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ status: "error", message: "Invalid inquiry id" });
     }
+    const inquiry = await prisma.inquiry.update({
+      where: { id },
+      data: { status: "closed", closedAt: new Date() },
+    });
+    res.json({ status: "ok", inquiry });
+  } catch (error) {
+    next(error);
+  }
+});
 
+// ── 予約一覧 ──────────────────────────────────────────────
+app.get("/api/admin/reservations", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
     const reservations = await prisma.reservation.findMany({
       orderBy: { reservedAt: "desc" },
       take: 200,
       include: {
         user: true,
-        schedule: {
-          include: {
-            event: true,
-          },
-        },
+        schedule: { include: { event: true } },
       },
     });
-
     res.json({
       status: "ok",
       reservations: reservations.map((r) => ({
@@ -882,7 +934,9 @@ app.get("/api/admin/reservations", async (req, res, next) => {
         lineUserId: r.lineUserId,
         name: r.user?.name || "",
         eventName: r.schedule?.event?.name || "",
+        eventId: r.schedule?.event?.id || "",
         scheduleId: r.scheduleId,
+        startsAt: r.schedule?.startsAt || null,
         datetime: r.schedule ? formatDateTimeForDisplay(r.schedule.startsAt) : "",
         location: r.schedule?.location || "",
         reservedAt: r.reservedAt,
@@ -894,53 +948,23 @@ app.get("/api/admin/reservations", async (req, res, next) => {
   }
 });
 
-app.post("/api/admin/reservations/:id/cancel", async (req, res, next) => {
+// ── 予約キャンセル（管理者） ──────────────────────────────
+app.post("/api/admin/reservations/:id/cancel", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
-    }
-
     const reservationId = req.params.id;
 
     const result = await prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id: reservationId },
-        include: {
-          schedule: {
-            include: {
-              event: true,
-            },
-          },
-        },
+        include: { schedule: { include: { event: true } } },
       });
-
-      if (!reservation) {
-        return {
-          status: "error",
-          message: "予約が見つかりません",
-        };
-      }
-
-      if (reservation.status !== "active") {
-        return {
-          status: "error",
-          message: "この予約はすでに有効ではありません",
-        };
-      }
+      if (!reservation) return { status: "error", message: "予約が見つかりません" };
+      if (reservation.status !== "active") return { status: "error", message: "この予約はすでに有効ではありません" };
 
       await tx.reservation.update({
         where: { id: reservationId },
-        data: {
-          status: "cancelled",
-          cancelledAt: new Date(),
-        },
+        data: { status: "cancelled", cancelledAt: new Date() },
       });
-
       return {
         status: "ok",
         lineUserId: reservation.lineUserId,
@@ -951,183 +975,227 @@ app.post("/api/admin/reservations/:id/cancel", async (req, res, next) => {
     if (result.status === "ok" && result.lineUserId && result.notificationText) {
       await pushLineMessage(result.lineUserId, result.notificationText);
     }
-
     delete result.notificationText;
-
     res.json(result);
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/admin/inquiries/:id/close", async (req, res, next) => {
+// ── 日程一覧（管理者：非公開含む全件） ───────────────────
+app.get("/api/admin/schedules", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
-    }
-
-    const id = Number(req.params.id);
-
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid inquiry id",
-      });
-    }
-
-    const inquiry = await prisma.inquiry.update({
-      where: { id },
-      data: {
-        status: "closed",
-        closedAt: new Date(),
-      },
-    });
-
-    res.json({
-      status: "ok",
-      inquiry,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.get("/api/admin/schedules", async (req, res, next) => {
-  try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
-    }
-
     const schedules = await prisma.schedule.findMany({
       orderBy: { startsAt: "asc" },
       include: {
         event: true,
-        reservations: {
-          where: { status: "active" },
-          select: { id: true },
-        },
-        waitlists: {
-          where: { status: "active" },
-          select: { id: true },
-        },
+        reservations: { where: { status: "active" }, select: { id: true } },
+        waitlists: { where: { status: "active" }, select: { id: true } },
       },
     });
 
-    const result = schedules.map((schedule) => {
-      const capacity =
-        schedule.capacityOverride ?? schedule.event.defaultCapacity ?? 0;
-      const reservedCount = schedule.reservations.length;
-      const waitlistCount = schedule.waitlists.length;
-      const remainingCount = Math.max(capacity - reservedCount, 0);
-
+    const result = schedules.map((s) => {
+      const capacity = s.capacityOverride ?? s.event.defaultCapacity ?? 0;
+      const reservedCount = s.reservations.length;
+      const waitlistCount = s.waitlists.length;
       return {
-        id: schedule.id,
-        eventId: schedule.eventId,
-        eventName: schedule.event.name,
-        startsAt: schedule.startsAt,
-        datetime: formatDateTimeForDisplay(schedule.startsAt),
-        acceptStartAt: schedule.acceptStartAt,
-        acceptEndAt: schedule.acceptEndAt,
+        id: s.id,
+        eventId: s.eventId,
+        eventName: s.event.name,
+        startsAt: s.startsAt,
+        datetime: formatDateTimeForDisplay(s.startsAt),
+        acceptStartAt: s.acceptStartAt,
+        acceptEndAt: s.acceptEndAt,
         capacity,
         reservedCount,
         waitlistCount,
-        remainingCount,
-        location: schedule.location || "",
-        note: schedule.note || "",
-        createdAt: schedule.createdAt,
+        remainingCount: Math.max(capacity - reservedCount, 0),
+        location: s.location || "",
+        note: s.note || "",
+        isHidden: s.isHidden ?? false,
+        createdAt: s.createdAt,
       };
     });
 
-    res.json({
-      status: "ok",
-      schedules: result,
-    });
+    res.json({ status: "ok", schedules: result });
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/admin/schedules", async (req, res, next) => {
+// ── 日程追加 ──────────────────────────────────────────────
+app.post("/api/admin/schedules", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const adminKey = req.headers["x-admin-api-key"];
-
-    if (!process.env.ADMIN_API_KEY || adminKey !== process.env.ADMIN_API_KEY) {
-      return res.status(401).json({
-        status: "error",
-        message: "Unauthorized",
-      });
-    }
-
-    const {
-      eventId,
-      startsAt,
-      acceptStartAt,
-      acceptEndAt,
-      capacityOverride,
-      location,
-      note,
-    } = req.body;
+    const { eventId, startsAt, acceptStartAt, acceptEndAt, capacityOverride, location, note } = req.body;
 
     if (!eventId || !startsAt) {
-      return res.status(400).json({
-        status: "error",
-        message: "イベント、開催日時は必須です",
-      });
+      return res.status(400).json({ status: "error", message: "イベント、開催日時は必須です" });
     }
 
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-    });
-
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {
-      return res.status(400).json({
-        status: "error",
-        message: "イベントが見つかりません",
-      });
+      return res.status(400).json({ status: "error", message: "イベントが見つかりません" });
     }
 
-  const schedule = await prisma.$transaction(async (tx) => {
-    const id = await createScheduleId(tx);
-
-    return tx.schedule.create({
-      data: {
-        id,
-        eventId,
-        startsAt: new Date(startsAt),
-        acceptStartAt: acceptStartAt ? new Date(acceptStartAt) : null,
-        acceptEndAt: acceptEndAt ? new Date(acceptEndAt) : null,
-        capacityOverride:
-          capacityOverride === "" || capacityOverride == null
-            ? null
-            : Number(capacityOverride),
-        location: location || null,
-        note: note || null,
-      },
+    const schedule = await prisma.$transaction(async (tx) => {
+      const id = await createScheduleId(tx);
+      return tx.schedule.create({
+        data: {
+          id,
+          eventId,
+          startsAt: new Date(startsAt),
+          acceptStartAt: acceptStartAt ? new Date(acceptStartAt) : null,
+          acceptEndAt: acceptEndAt ? new Date(acceptEndAt) : null,
+          capacityOverride: capacityOverride === "" || capacityOverride == null ? null : Number(capacityOverride),
+          location: location || null,
+          note: note || null,
+        },
+      });
     });
-  });
 
-  res.json({
-    status: "ok",
-    schedule,
-  });
+    res.json({ status: "ok", schedule });
   } catch (error) {
     if (error.code === "P2002") {
-      return res.status(400).json({
-        status: "error",
-        message: "同じ日程IDがすでに存在します",
+      return res.status(400).json({ status: "error", message: "同じ日程IDがすでに存在します" });
+    }
+    next(error);
+  }
+});
+
+// ── 日程マスタ編集 ────────────────────────────────────────
+app.patch("/api/admin/schedules/:id", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { startsAt, acceptStartAt, acceptEndAt, capacityOverride, location, note } = req.body;
+
+    const schedule = await prisma.schedule.findUnique({ where: { id } });
+    if (!schedule) {
+      return res.status(404).json({ status: "error", message: "日程が見つかりません" });
+    }
+
+    const updated = await prisma.schedule.update({
+      where: { id },
+      data: {
+        ...(startsAt !== undefined && { startsAt: new Date(startsAt) }),
+        ...(acceptStartAt !== undefined && { acceptStartAt: acceptStartAt ? new Date(acceptStartAt) : null }),
+        ...(acceptEndAt !== undefined && { acceptEndAt: acceptEndAt ? new Date(acceptEndAt) : null }),
+        ...(capacityOverride !== undefined && {
+          capacityOverride: capacityOverride === "" || capacityOverride == null ? null : Number(capacityOverride),
+        }),
+        ...(location !== undefined && { location: location || null }),
+        ...(note !== undefined && { note: note || null }),
+      },
+    });
+
+    res.json({ status: "ok", schedule: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── 日程非公開化（isHidden フラグ） ──────────────────────
+app.post("/api/admin/schedules/:id/hide", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { notifyReservees = false } = req.body;
+
+    const schedule = await prisma.schedule.findUnique({
+      where: { id },
+      include: {
+        event: true,
+        reservations: { where: { status: "active" }, select: { lineUserId: true } },
+      },
+    });
+
+    if (!schedule) {
+      return res.status(404).json({ status: "error", message: "日程が見つかりません" });
+    }
+
+    // isHidden フィールドが未定義の場合は note フラグで代替（マイグレーション前の安全策）
+    try {
+      await prisma.schedule.update({
+        where: { id },
+        data: { isHidden: true },
+      });
+    } catch {
+      // isHidden カラムがまだない場合は note に "[非公開]" を付与してフォールバック
+      await prisma.schedule.update({
+        where: { id },
+        data: { note: `[非公開] ${schedule.note || ""}`.trim() },
       });
     }
 
+    let notifiedCount = 0;
+    if (notifyReservees && schedule.reservations.length > 0) {
+      const text = [
+        "【重要】イベント中止のお知らせ",
+        "",
+        `${schedule.event.name}`,
+        formatDateTimeForDisplay(schedule.startsAt),
+        "",
+        "上記イベントは中止となりました。ご迷惑をおかけして申し訳ございません。",
+      ].join("\n");
+
+      for (const r of schedule.reservations) {
+        await pushLineMessage(r.lineUserId, text);
+        notifiedCount++;
+      }
+    }
+
+    res.json({ status: "ok", notifiedCount });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── ユーザー一覧 ──────────────────────────────────────────
+app.get("/api/admin/users", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      orderBy: { registeredAt: "desc" },
+      take: 300,
+      select: {
+        lineUserId: true,
+        name: true,
+        registeredAt: true,
+      },
+    });
+    res.json({ status: "ok", users });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ── キャンセル待ち一覧 ────────────────────────────────────
+app.get("/api/admin/waitlists", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const waitlists = await prisma.waitlist.findMany({
+      orderBy: { registeredAt: "desc" },
+      take: 200,
+      include: {
+        user: { select: { name: true } },
+        schedule: { include: { event: true } },
+      },
+    });
+
+    res.json({
+      status: "ok",
+      waitlists: waitlists.map((w) => ({
+        id: w.id,
+        lineUserId: w.lineUserId,
+        name: w.user?.name || "",
+        scheduleId: w.scheduleId,
+        eventName: w.schedule?.event?.name || "",
+        eventId: w.schedule?.event?.id || "",
+        startsAt: w.schedule?.startsAt || null,
+        datetime: w.schedule ? formatDateTimeForDisplay(w.schedule.startsAt) : "",
+        location: w.schedule?.location || "",
+        status: w.status,
+        registeredAt: w.registeredAt,
+        notifiedAt: w.notifiedAt,
+      })),
+    });
+  } catch (error) {
     next(error);
   }
 });
