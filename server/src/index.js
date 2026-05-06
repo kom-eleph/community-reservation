@@ -69,6 +69,20 @@ function publicRateLimit(req, res, next) {
 const app = express();
 const prisma = new PrismaClient();
 
+// nginxリバースプロキシ経由のため、X-Forwarded-ForからクライアントIPを取得
+app.set("trust proxy", 1);
+
+// ── rateLimitMap 定期クリーンアップ（メモリリーク防止）──
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of adminRateLimitMap.entries()) {
+    if (now > record.resetAt) adminRateLimitMap.delete(ip);
+  }
+  for (const [ip, record] of publicRateLimitMap.entries()) {
+    if (now > record.resetAt) publicRateLimitMap.delete(ip);
+  }
+}, 15 * 60 * 1000); // 15分ごとに実行
+
 function verifyLineSignature(body, signature) {
   const channelSecret = process.env.LINE_CHANNEL_SECRET;
 
@@ -963,7 +977,8 @@ app.post("/api/webhook/line", async (req, res) => {
     res.json({ status: "ok" });
   } catch (e) {
     console.error(e);
-    res.json({ status: "error" });
+    // LINEはWebhookに200以外が返ると再送を繰り返すため、エラー時も200を返す
+    res.status(200).json({ status: "ok" });
   }
 });
 
