@@ -60,15 +60,15 @@ async function verifyLiffToken(liffToken, claimedUserId) {
     return false;
   }
   try {
-    // /oauth2/v2.1/userinfo でLIFFアクセストークンからuserIdを取得
-    const res = await fetch("https://api.line.me/oauth2/v2.1/userinfo", {
+    // /v2/profile でLIFFアクセストークンからuserIdを取得
+    const res = await fetch("https://api.line.me/v2/profile", {
       headers: { Authorization: `Bearer ${liffToken}` },
     });
     const body = await res.json();
-    console.log("[verifyLiffToken] status:", res.status, "sub:", body.sub, "claimed:", claimedUserId);
+    console.log("[verifyLiffToken] status:", res.status, "userId:", body.userId, "claimed:", claimedUserId);
     if (!res.ok) return false;
-    // sub フィールドが LINE userId と一致するか確認
-    return body.sub === claimedUserId;
+    // userId フィールドが リクエストの userId と一致するか確認
+    return body.userId === claimedUserId;
   } catch (e) {
     console.error("[verifyLiffToken] error:", e.message);
     return false;
