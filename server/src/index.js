@@ -35,10 +35,16 @@ function adminRateLimit(req, res, next) {
 // ── レート制限（公開API・スパム・スクレイピング防止）──────
 const publicRateLimitMap = new Map();
 function publicRateLimit(req, res, next) {
+  // 管理者APIキーが付いているリクエストはレート制限をスキップ（動作確認用）
+  const adminKey = req.headers["x-admin-api-key"];
+  if (process.env.ADMIN_API_KEY && adminKey === process.env.ADMIN_API_KEY) {
+    return next();
+  }
+
   const ip = req.ip || req.socket?.remoteAddress || "unknown";
   const now = Date.now();
   const windowMs = 15 * 60 * 1000; // 15分
-  const maxRequests = 30;
+  const maxRequests = 60;
 
   const record = publicRateLimitMap.get(ip) || { count: 0, resetAt: now + windowMs };
 
