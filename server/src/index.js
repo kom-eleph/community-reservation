@@ -53,6 +53,23 @@ function verifyLineSignature(body, signature) {
   );
 }
 
+// ── LIFFアクセストークン検証（userIdのなりすまし防止）──
+async function verifyLiffToken(liffToken, claimedUserId) {
+  if (!liffToken) return false;
+  try {
+    const res = await fetch(
+      `https://api.line.me/oauth2/v2.1/verify?access_token=${encodeURIComponent(liffToken)}`
+    );
+    if (!res.ok) return false;
+    const data = await res.json();
+    // トークンの sub がリクエストの userId と一致するか確認
+    return data.sub === claimedUserId;
+  } catch (e) {
+    console.error("[verifyLiffToken] error:", e.message);
+    return false;
+  }
+}
+
 async function pushLineMessage(lineUserId, text) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
@@ -260,13 +277,17 @@ async function createScheduleId(tx) {
 
 app.post("/api/reservations", async (req, res, next) => {
   try {
-    const { userId, schedId, name, birthdate, gender } = req.body;
+    const { userId, schedId, name, birthdate, gender, liffToken } = req.body;
 
     if (!userId || !schedId || !name) {
       return res.status(400).json({
         status: "error",
         message: "必須項目が不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -433,13 +454,17 @@ app.get("/api/my-reservations", async (req, res, next) => {
 app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
   try {
     const { reservationId } = req.params;
-    const { userId } = req.body;
+    const { userId, liffToken } = req.body;
 
     if (!reservationId || !userId) {
       return res.status(400).json({
         status: "error",
         message: "必須項目が不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -502,13 +527,17 @@ app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
 app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
   try {
     const { reservationId } = req.params;
-    const { userId, newSchedId, name, birthdate, gender } = req.body;
+    const { userId, newSchedId, name, birthdate, gender, liffToken } = req.body;
 
     if (!reservationId || !userId || !newSchedId || !name) {
       return res.status(400).json({
         status: "error",
         message: "必須項目が不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -697,13 +726,17 @@ app.get("/api/user-info", async (req, res, next) => {
 
 app.post("/api/waitlist", async (req, res, next) => {
   try {
-    const { userId, schedId } = req.body;
+    const { userId, schedId, liffToken } = req.body;
 
     if (!userId || !schedId) {
       return res.status(400).json({
         status: "error",
         message: "必須項目が不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const result = await prisma.$transaction(async (tx) => {
