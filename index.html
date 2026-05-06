@@ -22,14 +22,14 @@
 
   /* ── Header ── */
   .header {
-    background: linear-gradient(135deg, #06C755 0%, #04a847 100%);
+    background: linear-gradient(135deg, #00A5BF 0%, #007A8F 100%);
     color: #fff;
     padding: 16px 20px;
     text-align: center;
     font-size: 17px;
     font-weight: 700;
     letter-spacing: .5px;
-    box-shadow: 0 2px 8px rgba(6,199,85,.3);
+    box-shadow: 0 2px 8px rgba(0,165,191,.3);
     position: sticky; top: 0; z-index: 100;
   }
 
@@ -52,7 +52,7 @@
 
   /* ── Loading ── */
   .loading-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 80px 0; }
-  .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #06C755; border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 16px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #e5e7eb; border-top-color: #00A5BF; border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .loading-text { font-size: 13px; color: #9ca3af; }
 
@@ -87,7 +87,7 @@
     transition: all .15s;
     font-family: inherit;
   }
-  .event-btn:hover:not(:disabled) { border-color: #06C755; background: #f0fdf4; }
+  .event-btn:hover:not(:disabled) { border-color: #00A5BF; background: #f0fafc; }
   .event-btn:active:not(:disabled) { transform: scale(.99); }
   .event-btn .sub { font-size: 12px; color: #6b7280; font-weight: 400; margin-top: 4px; }
   .event-btn:disabled { opacity: .4; cursor: default; }
@@ -106,7 +106,7 @@
     position: relative;
     font-family: inherit;
   }
-  .sched-btn:hover:not(.full):not(.already):not(.waitlisted) { border-color: #06C755; background: #f0fdf4; }
+  .sched-btn:hover:not(.full):not(.already):not(.waitlisted) { border-color: #00A5BF; background: #f0fafc; }
   .sched-btn.full { cursor: pointer; background: #fff; }
   .sched-btn.full:hover { border-color: #f97316; background: #fff7ed; }
   .sched-btn.already { opacity: .7; cursor: default; background: #f0f9ff; border-color: #bfdbfe; }
@@ -118,7 +118,7 @@
     position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
     font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px;
   }
-  .badge-ok       { background: #dcfce7; color: #16a34a; }
+  .badge-ok       { background: #d6f2f7; color: #007A8F; }
   .badge-full     { background: #fff7ed; color: #c2410c; }
   .badge-already  { background: #eff6ff; color: #3b82f6; }
   .badge-waitlist { background: #fefce8; color: #92400e; }
@@ -130,7 +130,7 @@
 
   .btn-green {
     display: block; width: 100%; padding: 15px;
-    background: #06C755; color: #fff;
+    background: #00A5BF; color: #fff;
     border: none; border-radius: 12px;
     font-size: 16px; font-weight: 700;
     cursor: pointer;
@@ -138,7 +138,7 @@
     letter-spacing: .3px;
     font-family: inherit;
   }
-  .btn-green:hover:not(:disabled) { background: #04a847; }
+  .btn-green:hover:not(:disabled) { background: #007A8F; }
   .btn-green:active:not(:disabled) { transform: scale(.99); }
   .btn-green:disabled { opacity: .5; cursor: default; }
 
@@ -187,7 +187,7 @@
     font-family: inherit;
     -webkit-appearance: none;
   }
-  .form-input:focus { border-color: #06C755; box-shadow: 0 0 0 3px rgba(6,199,85,.1); background: #fff; }
+  .form-input:focus { border-color: #00A5BF; box-shadow: 0 0 0 3px rgba(0,165,191,.1); background: #fff; }
   .form-select {
     width: 100%; padding: 12px 14px;
     border: 1.5px solid #e5e7eb; border-radius: 10px;
@@ -200,7 +200,7 @@
     background-position: right 14px center;
     padding-right: 36px;
   }
-  .form-select:focus { border-color: #06C755; background-color: #fff; }
+  .form-select:focus { border-color: #00A5BF; background-color: #fff; }
 
   /* ── Confirm ── */
   .confirm-box { background: #f9fafb; border-radius: 12px; padding: 16px; margin-bottom: 18px; }
@@ -221,7 +221,7 @@
   .rsv-id { font-size: 11px; color: #9ca3af; font-family: monospace; }
   .rsv-status {
     font-size: 11px; font-weight: 700;
-    background: #dcfce7; color: #16a34a;
+    background: #d6f2f7; color: #007A8F;
     padding: 3px 8px; border-radius: 20px;
   }
   .rsv-event { font-size: 17px; font-weight: 700; color: #111827; margin-bottom: 6px; }
@@ -248,13 +248,13 @@
   /* ── 残席更新バナー ── */
   .refresh-bar {
     display: flex; align-items: center; justify-content: space-between;
-    background: #f0fdf4; border: 1px solid #bbf7d0;
+    background: #f0fafc; border: 1px solid #99dce8;
     border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;
-    font-size: 12px; color: #16a34a;
+    font-size: 12px; color: #007A8F;
   }
   .refresh-bar button {
     background: none; border: none; cursor: pointer;
-    font-size: 12px; color: #06C755; font-weight: 600;
+    font-size: 12px; color: #00A5BF; font-weight: 600;
     padding: 0; font-family: inherit;
   }
   .refresh-bar button:disabled { color: #9ca3af; cursor: default; }
