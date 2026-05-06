@@ -57,12 +57,13 @@ function verifyLineSignature(body, signature) {
 async function verifyLiffToken(liffToken, claimedUserId) {
   if (!liffToken) return false;
   try {
-    const res = await fetch(
-      `https://api.line.me/oauth2/v2.1/verify?access_token=${encodeURIComponent(liffToken)}`
-    );
+    // /oauth2/v2.1/userinfo でLIFFアクセストークンからuserIdを取得
+    const res = await fetch("https://api.line.me/oauth2/v2.1/userinfo", {
+      headers: { Authorization: `Bearer ${liffToken}` },
+    });
     if (!res.ok) return false;
     const data = await res.json();
-    // トークンの sub がリクエストの userId と一致するか確認
+    // sub フィールドが LINE userId と一致するか確認
     return data.sub === claimedUserId;
   } catch (e) {
     console.error("[verifyLiffToken] error:", e.message);
