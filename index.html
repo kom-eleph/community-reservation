@@ -565,6 +565,10 @@ async function fetchJson(path, options = {}) {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      // GETエンドポイントのuserId検証用にAuthorizationヘッダーを付与
+      ...(state.liffAccessToken
+        ? { 'Authorization': 'Bearer ' + state.liffAccessToken }
+        : {}),
       ...(options.headers || {}),
     },
   });

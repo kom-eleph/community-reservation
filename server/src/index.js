@@ -32,6 +32,34 @@ function adminRateLimit(req, res, next) {
   next();
 }
 
+// ── レート制限（公開API・スパム・スクレイピング防止）──────
+const publicRateLimitMap = new Map();
+function publicRateLimit(req, res, next) {
+  const ip = req.ip || req.socket?.remoteAddress || "unknown";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000; // 15分
+  const maxRequests = 30;
+
+  const record = publicRateLimitMap.get(ip) || { count: 0, resetAt: now + windowMs };
+
+  if (now > record.resetAt) {
+    record.count = 0;
+    record.resetAt = now + windowMs;
+  }
+
+  record.count += 1;
+  publicRateLimitMap.set(ip, record);
+
+  if (record.count > maxRequests) {
+    return res.status(429).json({
+      status: "error",
+      message: "リクエストが多すぎます。しばらく時間をおいてから再試行してください。",
+    });
+  }
+
+  next();
+}
+
 const app = express();
 const prisma = new PrismaClient();
 
@@ -274,7 +302,7 @@ async function createScheduleId(tx) {
   return `SCH-${String(nextNumber).padStart(3, "0")}`;
 }
 
-app.post("/api/reservations", async (req, res, next) => {
+app.post("/api/reservations", publicRateLimit, async (req, res, next) => {
   try {
     const { userId, schedId, name, birthdate, gender, liffToken } = req.body;
 
@@ -404,15 +432,20 @@ function formatDateTimeForDisplay(date) {
   }).format(date);
 }
 
-app.get("/api/my-reservations", async (req, res, next) => {
+app.get("/api/my-reservations", publicRateLimit, async (req, res, next) => {
   try {
     const { userId } = req.query;
+    const liffToken = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
 
     if (!userId) {
       return res.status(400).json({
         status: "error",
         message: "userIdが不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const reservations = await prisma.reservation.findMany({
@@ -451,7 +484,7 @@ app.get("/api/my-reservations", async (req, res, next) => {
   }
 });
 
-app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
+app.post("/api/reservations/:reservationId/cancel", publicRateLimit, async (req, res, next) => {
   try {
     const { reservationId } = req.params;
     const { userId, liffToken } = req.body;
@@ -525,7 +558,7 @@ app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
   }
 });
 
-app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
+app.post("/api/reservations/:reservationId/change", publicRateLimit, async (req, res, next) => {
   try {
     const { reservationId } = req.params;
     const { userId, newSchedId, name, birthdate, gender, liffToken } = req.body;
@@ -696,15 +729,20 @@ function formatDateOnlyForInput(date) {
   return formatter.format(date);
 }
 
-app.get("/api/user-info", async (req, res, next) => {
+app.get("/api/user-info", publicRateLimit, async (req, res, next) => {
   try {
     const { userId } = req.query;
+    const liffToken = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
 
     if (!userId) {
       return res.status(400).json({
         status: "error",
         message: "userIdが不足しています",
       });
+    }
+
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証に失敗しました" });
     }
 
     const user = await prisma.user.findUnique({
@@ -726,7 +764,7 @@ app.get("/api/user-info", async (req, res, next) => {
   }
 });
 
-app.post("/api/waitlist", async (req, res, next) => {
+app.post("/api/waitlist", publicRateLimit, async (req, res, next) => {
   try {
     const { userId, schedId, liffToken } = req.body;
 
@@ -786,7 +824,7 @@ app.post("/api/waitlist", async (req, res, next) => {
   }
 });
 
-app.post("/api/inquiries", async (req, res, next) => {
+app.post("/api/inquiries", publicRateLimit, async (req, res, next) => {
   try {
     const { userId, name, message } = req.body;
 
@@ -830,19 +868,20 @@ app.post("/api/inquiries", async (req, res, next) => {
       );
     }
 
-    if (userId) {
-      await pushLineMessage(
-        userId,
-        [
-          "お問い合わせを受け付けました。",
-          "",
-          "内容：",
-          String(message).trim(),
-          "",
-          "確認後、順次ご返信します。"
-        ].join("\n")
-      );
-    }
+    // ユーザーへの自動返信Push: フロント側のtoastメッセージで代替済みのためコメントアウト
+    // if (userId) {
+    //   await pushLineMessage(
+    //     userId,
+    //     [
+    //       "お問い合わせを受け付けました。",
+    //       "",
+    //       "内容：",
+    //       String(message).trim(),
+    //       "",
+    //       "確認後、順次ご返信します。"
+    //     ].join("\n")
+    //   );
+    // }
 
     res.json({
       status: "ok",
