@@ -55,16 +55,20 @@ function verifyLineSignature(body, signature) {
 
 // ── LIFFアクセストークン検証（userIdのなりすまし防止）──
 async function verifyLiffToken(liffToken, claimedUserId) {
-  if (!liffToken) return false;
+  if (!liffToken) {
+    console.warn("[verifyLiffToken] liffToken is empty");
+    return false;
+  }
   try {
     // /oauth2/v2.1/userinfo でLIFFアクセストークンからuserIdを取得
     const res = await fetch("https://api.line.me/oauth2/v2.1/userinfo", {
       headers: { Authorization: `Bearer ${liffToken}` },
     });
+    const body = await res.json();
+    console.log("[verifyLiffToken] status:", res.status, "sub:", body.sub, "claimed:", claimedUserId);
     if (!res.ok) return false;
-    const data = await res.json();
     // sub フィールドが LINE userId と一致するか確認
-    return data.sub === claimedUserId;
+    return body.sub === claimedUserId;
   } catch (e) {
     console.error("[verifyLiffToken] error:", e.message);
     return false;
