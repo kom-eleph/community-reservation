@@ -429,8 +429,8 @@
       <div class="done-wrap">
         <div class="done-icon">🗑️</div>
         <div class="done-title">キャンセルしました</div>
-        <div class="done-sub">またのご参加をお待ちしています</div>
-        <button class="btn-green" onclick="loadMyReservations()">予約一覧に戻る</button>
+        <div class="done-sub" id="cancelled-detail">またのご参加をお待ちしています</div>
+        <button class="btn-green" onclick="loadMyReservations()">予約一覧を見る</button>
         <button class="btn-gray"  onclick="safeClose()">閉じる</button>
       </div>
     </div>
@@ -537,6 +537,7 @@ const state = {
   selectedSched:         null,
   changeFromEventId:     null,
   changingReservationId: null,
+  changingFromSched:     null,
   cbCount:               0,
   submitting:            false,
   schedRefreshTimer:     null,
@@ -1016,10 +1017,26 @@ async function submitReservation() {
 
     if (data.status === 'ok') {
       const isChange = !!state.changingReservationId;
+      const sched    = state.selectedSched;
+      const oldSched = state.changingFromSched;
+
       document.getElementById('done-icon').textContent  = isChange ? '🔄' : '✅';
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
-      document.getElementById('done-detail').textContent =
-        '予約ID: ' + data.reservationId + '\n予約内容をLINEに送信しました📩';
+
+      // d1+d2: 予約内容を直接表示・変更時は旧→新の対比
+      let detail = '';
+      if (isChange && oldSched) {
+        detail = '旧: ' + oldSched.datetime + '\n→ 新: ' + sched.datetime + '\n📍 ' + (sched.location || '') +
+                 '\n\n予約ID: ' + data.reservationId +
+                 '\n\n予約確認はリッチメニューの「予約確認」からいつでも見られます';
+      } else {
+        detail = '📌 ' + (sched.eventName || '') +
+                 '\n📅 ' + sched.datetime +
+                 '\n📍 ' + (sched.location || '') +
+                 '\n\n予約ID: ' + data.reservationId +
+                 '\n\n予約確認はリッチメニューの「予約確認」からいつでも見られます';
+      }
+      document.getElementById('done-detail').textContent = detail;
 
       const doneBtn    = document.getElementById('done-btn');
       const doneBtnSub = document.getElementById('done-btn-sub');
@@ -1035,6 +1052,7 @@ async function submitReservation() {
         doneBtnSub.style.display = 'none';
       }
       state.changingReservationId = null;
+      state.changingFromSched     = null;
       invalidateReservationsCache();  // 予約内容が変わったのでキャッシュを破棄
       showScreen('done');
 
@@ -1102,11 +1120,11 @@ function renderMyReservations(reservations) {
         </div>
         <div class="rsv-actions">
           <button class="btn-green"
-            onclick="startChange('${escAttr(r.reservationId)}','${escAttr(r.eventId)}','${escAttr(r.eventName)}')">
+            onclick="startChange('${escAttr(r.reservationId)}','${escAttr(r.eventId)}','${escAttr(r.eventName)}','${escAttr(r.datetime)}','${escAttr(r.location)}')">
             日程変更
           </button>
           <button class="btn-red"
-            onclick="confirmCancel('${escAttr(r.reservationId)}')">
+            onclick="confirmCancel('${escAttr(r.reservationId)}','${escAttr(r.eventName)}','${escAttr(r.datetime)}')">
             キャンセル
           </button>
         </div>
@@ -1117,13 +1135,13 @@ function renderMyReservations(reservations) {
 }
 
 // ── キャンセル（カスタムモーダル） ───────────────────────
-function confirmCancel(reservationId) {
+function confirmCancel(reservationId, eventName, datetime) {
   const modal = document.getElementById('modal-cancel');
   modal.classList.add('active');
 
   document.getElementById('modal-cancel-ok').onclick = () => {
     modal.classList.remove('active');
-    doCancel(reservationId);
+    doCancel(reservationId, eventName, datetime);
   };
   document.getElementById('modal-cancel-ng').onclick = () => {
     modal.classList.remove('active');
@@ -1133,7 +1151,7 @@ function confirmCancel(reservationId) {
   };
 }
 
-async function doCancel(reservationId) {
+async function doCancel(reservationId, eventName, datetime) {
   showScreen('loading');
   setLoadingMsg('キャンセル処理中...');
   try {
@@ -1146,6 +1164,13 @@ async function doCancel(reservationId) {
     });
     if (data.status === 'ok') {
       invalidateReservationsCache();  // キャンセルしたのでキャッシュを破棄
+      // d3: キャンセル完了画面に詳細を表示
+      const detailEl = document.getElementById('cancelled-detail');
+      if (detailEl) {
+        detailEl.textContent = (eventName ? '📌 ' + eventName + '\n' : '') +
+          (datetime ? '📅 ' + datetime + '\n' : '') +
+          '\n予約一覧から消えていることで確認できます';
+      }
       showScreen('cancelled');
     } else {
       showToast(data.message || 'キャンセルに失敗しました');
@@ -1159,8 +1184,12 @@ async function doCancel(reservationId) {
 
 // ── 日程変更 ──────────────────────────────────────────────
 // [B-2修正] changingEventId を廃止し changingReservationId のみで管理
-function startChange(reservationId, eventId, eventName) {
+function startChange(reservationId, eventId, eventName, oldDatetime, oldLocation) {
   state.changingReservationId = reservationId;
+  // d2: 変更前の日程情報を保存（done画面での対比表示用）
+  state.changingFromSched = oldDatetime
+    ? { datetime: oldDatetime, location: oldLocation || '' }
+    : null;
   // changeFromEventId はイベント絞り込み用として統一
   state.changeFromEventId = eventId;
   loadSchedules({ id: eventId, name: eventName });
