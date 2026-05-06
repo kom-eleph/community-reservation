@@ -468,7 +468,7 @@
 
   <main style="padding:16px;">
     <p style="font-size:13px;color:#6b7280;line-height:1.7;margin-bottom:12px;">
-      お問い合わせ内容をご入力ください。確認後、LINE公式アカウントより返信します。
+      お問い合わせ内容をご入力ください。確認後、<strong>このLINEのトークで回答</strong>します。
     </p>
 
     <textarea id="inq-message"
@@ -481,6 +481,19 @@
       閉じる
     </button>
   </main>
+</div>
+
+<!-- お問い合わせ送信完了 -->
+<div id="s-inq-done" class="screen">
+  <div class="card">
+    <div class="done-wrap">
+      <div class="done-icon">📩</div>
+      <div class="done-title">送信しました</div>
+      <div class="done-info" id="inq-done-info"></div>
+      <div class="done-nav">確認後、このLINEのトークで回答します</div>
+      <button class="btn-green" onclick="safeClose()">閉じる</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── キャンセル確認モーダル ── -->
@@ -1221,7 +1234,7 @@ function startChange(reservationId, eventId, eventName, oldDatetime, oldLocation
 
 // ── ユーティリティ ─────────────────────────────────────────
 function showScreen(name) {
-  ['loading','error','attendee','event','sched','confirm','done','myrsv','cancelled','waitlisted','inquiry'].forEach(s => {
+  ['loading','error','attendee','event','sched','confirm','done','myrsv','cancelled','waitlisted','inquiry','inq-done'].forEach(s => {
     const el = document.getElementById('s-' + s);
     if (el) el.style.display = (s === name) ? 'block' : 'none';
   });
@@ -1297,8 +1310,15 @@ async function submitInquiry() {
 
     if (res.status === 'ok') {
       document.getElementById('inq-message').value = '';
-      showToast('送信しました。LINE公式アカウントより返信します。');
-      safeClose();
+      // 送信完了画面に内容を表示
+      const infoEl = document.getElementById('inq-done-info');
+      if (infoEl) {
+        const row = (label, val) =>
+          `<div class="done-info-row"><span class="done-info-label">${label}</span><span class="done-info-val">${escHtml(val)}</span></div>`;
+        infoEl.innerHTML = row('受付ID', String(res.inquiryId || ''));
+        infoEl.style.display = '';
+      }
+      showScreen('inq-done');
     } else {
       showToast(res.message || '送信に失敗しました');
       showScreen('inquiry');
