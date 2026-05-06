@@ -379,9 +379,10 @@ app.post("/api/reservations", async (req, res, next) => {
       };
     });
 
-    if (result.status === "ok" && result.notificationText) {
-      await pushLineMessage(userId, result.notificationText);
-    }
+    // d5: ユーザーへのPush通知を無償化対応のためコメントアウト（done画面に情報を直接表示）
+    // if (result.status === "ok" && result.notificationText) {
+    //   await pushLineMessage(userId, result.notificationText);
+    // }
     delete result.notificationText;
     res.json(result);
   } catch (error) {
@@ -513,9 +514,10 @@ app.post("/api/reservations/:reservationId/cancel", async (req, res, next) => {
       };
     });
 
-    if (result.status === "ok" && result.notificationText) {
-      await pushLineMessage(userId, result.notificationText);
-    }
+    // d7: ユーザーへのPush通知を無償化対応のためコメントアウト（done画面に情報を直接表示）
+    // if (result.status === "ok" && result.notificationText) {
+    //   await pushLineMessage(userId, result.notificationText);
+    // }
     delete result.notificationText;
     res.json(result);
   } catch (error) {
@@ -670,9 +672,10 @@ app.post("/api/reservations/:reservationId/change", async (req, res, next) => {
       };
     });
 
-    if (result.status === "ok" && result.notificationText) {
-      await pushLineMessage(userId, result.notificationText);
-    }
+    // d6: ユーザーへのPush通知を無償化対応のためコメントアウト（done画面に情報を直接表示）
+    // if (result.status === "ok" && result.notificationText) {
+    //   await pushLineMessage(userId, result.notificationText);
+    // }
     delete result.notificationText;
     res.json(result);
   } catch (error) {
