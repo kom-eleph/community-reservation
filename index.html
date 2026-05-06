@@ -233,7 +233,14 @@
   /* ── Done / Cancelled ── */
   .done-wrap { text-align: center; padding: 36px 16px; }
   .done-icon { font-size: 56px; margin-bottom: 16px; line-height: 1; }
-  .done-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: #111827; }
+  .done-title { font-size: 20px; font-weight: 700; margin-bottom: 20px; color: #111827; }
+  .done-info { background: #f9fafb; border-radius: 12px; padding: 16px; margin-bottom: 16px; text-align: left; }
+  .done-info-row { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; color: #374151; line-height: 1.6; padding: 4px 0; }
+  .done-info-row + .done-info-row { border-top: 0.5px solid #e5e7eb; }
+  .done-info-label { color: #9ca3af; font-size: 12px; min-width: 52px; padding-top: 2px; flex-shrink: 0; }
+  .done-info-val { color: #111827; font-size: 14px; }
+  .done-id { font-size: 12px; color: #9ca3af; margin-bottom: 20px; letter-spacing: 0.03em; }
+  .done-nav { font-size: 13px; color: #6b7280; margin-bottom: 24px; }
   .done-sub { font-size: 14px; color: #6b7280; margin-bottom: 28px; white-space: pre-line; text-align: left; }
 
   .status-none { text-align: center; padding: 36px; color: #9ca3af; font-size: 14px; }
@@ -407,7 +414,9 @@
       <div class="done-wrap">
         <div class="done-icon"  id="done-icon">✅</div>
         <div class="done-title" id="done-title">予約が完了しました</div>
-        <div class="done-sub"   id="done-detail"></div>
+        <div class="done-info"  id="done-info"  style="display:none;"></div>
+        <div class="done-id"    id="done-id"></div>
+        <div class="done-nav"   id="done-nav"></div>
         <button class="btn-green" id="done-btn"     onclick="safeClose()">閉じる</button>
         <button class="btn-gray"  id="done-btn-sub" style="display:none;" onclick="safeClose()">閉じる</button>
       </div>
@@ -429,7 +438,8 @@
       <div class="done-wrap">
         <div class="done-icon">🗑️</div>
         <div class="done-title">キャンセルしました</div>
-        <div class="done-sub" id="cancelled-detail">またのご参加をお待ちしています</div>
+        <div class="done-info" id="cancelled-info" style="display:none;"></div>
+        <div class="done-nav">「予約確認」から一覧が消えていることで確認できます</div>
         <button class="btn-green" onclick="loadMyReservations()">予約一覧を見る</button>
         <button class="btn-gray"  onclick="safeClose()">閉じる</button>
       </div>
@@ -1023,20 +1033,28 @@ async function submitReservation() {
       document.getElementById('done-icon').textContent  = isChange ? '🔄' : '✅';
       document.getElementById('done-title').textContent = isChange ? '日程変更が完了しました' : '予約が完了しました';
 
-      // d1+d2: 予約内容を直接表示・変更時は旧→新の対比
-      let detail = '';
+      // 詳細情報をカード形式で表示
+      const infoEl = document.getElementById('done-info');
+      const idEl   = document.getElementById('done-id');
+      const navEl  = document.getElementById('done-nav');
+
+      const row = (label, val) =>
+        `<div class="done-info-row"><span class="done-info-label">${label}</span><span class="done-info-val">${escHtml(val)}</span></div>`;
+
       if (isChange && oldSched) {
-        detail = '旧: ' + oldSched.datetime + '\n→ 新: ' + sched.datetime + '\n📍 ' + (sched.location || '') +
-                 '\n\n予約ID: ' + data.reservationId +
-                 '\n\n予約確認はリッチメニューの「予約確認」からいつでも見られます';
+        infoEl.innerHTML =
+          row('変更前', oldSched.datetime) +
+          row('変更後', sched.datetime) +
+          row('場所',   sched.location || '—');
       } else {
-        detail = '📌 ' + (sched.eventName || '') +
-                 '\n📅 ' + sched.datetime +
-                 '\n📍 ' + (sched.location || '') +
-                 '\n\n予約ID: ' + data.reservationId +
-                 '\n\n予約確認はリッチメニューの「予約確認」からいつでも見られます';
+        infoEl.innerHTML =
+          row('イベント', sched.eventName || '—') +
+          row('日時',     sched.datetime) +
+          row('場所',     sched.location || '—');
       }
-      document.getElementById('done-detail').textContent = detail;
+      infoEl.style.display = '';
+      idEl.textContent  = '予約ID：' + data.reservationId;
+      navEl.textContent = '予約確認はリッチメニューの「予約確認」からいつでも見られます';
 
       const doneBtn    = document.getElementById('done-btn');
       const doneBtnSub = document.getElementById('done-btn-sub');
@@ -1163,13 +1181,15 @@ async function doCancel(reservationId, eventName, datetime) {
       }),
     });
     if (data.status === 'ok') {
-      invalidateReservationsCache();  // キャンセルしたのでキャッシュを破棄
-      // d3: キャンセル完了画面に詳細を表示
-      const detailEl = document.getElementById('cancelled-detail');
-      if (detailEl) {
-        detailEl.textContent = (eventName ? '📌 ' + eventName + '\n' : '') +
-          (datetime ? '📅 ' + datetime + '\n' : '') +
-          '\n予約一覧から消えていることで確認できます';
+      invalidateReservationsCache();
+      const infoEl = document.getElementById('cancelled-info');
+      if (infoEl) {
+        const row = (label, val) =>
+          `<div class="done-info-row"><span class="done-info-label">${label}</span><span class="done-info-val">${escHtml(val)}</span></div>`;
+        infoEl.innerHTML =
+          (eventName ? row('イベント', eventName) : '') +
+          (datetime  ? row('日時',     datetime)  : '');
+        infoEl.style.display = (eventName || datetime) ? '' : 'none';
       }
       showScreen('cancelled');
     } else {
