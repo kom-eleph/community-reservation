@@ -1057,6 +1057,9 @@ app.get("/api/admin/reservations", adminRateLimit, requireAdminKey, async (req, 
         location: r.schedule?.location || "",
         reservedAt: r.reservedAt,
         cancelledAt: r.cancelledAt,
+        hasAllergy: r.hasAllergy,
+        carbonatedNg: r.carbonatedNg,
+        allergyNote: r.allergyNote || "",
       })),
     });
   } catch (error) {

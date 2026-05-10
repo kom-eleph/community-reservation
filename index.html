@@ -378,11 +378,15 @@
         </div>
         <div class="form-group">
           <label class="form-label">アレルギーはありますか？</label>
-          <select class="form-select" id="inp-has-allergy">
+          <p style="font-size:12px;color:#9ca3af;margin:-8px 0 8px;">アレルギーがある場合は、下の「その他・苦手なもの」欄に詳細をご記入ください。</p>
+          <select class="form-select" id="inp-has-allergy" onchange="toggleAllergyHint(this.value)">
             <option value="">選択してください（任意）</option>
             <option value="yes">ある</option>
             <option value="no">ない</option>
           </select>
+          <div id="allergy-hint" style="display:none;margin-top:8px;padding:10px 12px;background:#fef9ec;border:1px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e;line-height:1.7;">
+            ⚠️ アレルギーがある場合は、下の「その他・苦手なもの」欄に<strong>具体的な原材料名</strong>をご記入ください。<br>例：エビ・カニ、小麦、乳製品　など
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">炭酸NG</label>
@@ -394,9 +398,10 @@
         </div>
         <div class="form-group">
           <label class="form-label">その他、苦手なもの・避けたいもの</label>
+          <p style="font-size:12px;color:#9ca3af;margin:-8px 0 8px;">アレルギーの詳細（原材料名など）もこちらにご記入ください。</p>
           <textarea id="inp-allergy-note"
             style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;resize:vertical;min-height:72px;font-family:inherit;color:#111827;"
-            placeholder="例：甘いもの全般、ミント系が苦手　など（任意）"
+            placeholder="例：エビ・カニアレルギーあり、甘いものが苦手　など（任意）"
             maxlength="200"></textarea>
         </div>
       </div>
@@ -713,6 +718,12 @@ document.addEventListener('visibilitychange', () => {
 // 呼んで取得する。getBootData では個人情報を返さない設計のため。
 // すでに state.userInfo に name が入っている場合（同セッション内2回目以降）は
 // APIを呼ばずキャッシュを使う。
+function toggleAllergyHint(val) {
+  const hint = document.getElementById('allergy-hint');
+  if (!hint) return;
+  hint.style.display = val === 'yes' ? 'block' : 'none';
+}
+
 async function showAttendeeForm(sched) {
   state.selectedSched = sched;
 
@@ -744,6 +755,8 @@ async function showAttendeeForm(sched) {
     document.getElementById('inp-has-allergy').value   = '';
     document.getElementById('inp-carbonated-ng').value = '';
     document.getElementById('inp-allergy-note').value  = '';
+    const hint = document.getElementById('allergy-hint');
+    if (hint) hint.style.display = 'none';
   }
 
   // 登録済みバナーの表示/非表示
