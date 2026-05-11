@@ -1145,8 +1145,12 @@ function updateConsentBtn() {
 
 async function submitReservation() {
   if (state.submitting) return;
-  const consentedAt = document.getElementById('consent-check')?.checked
-    ? new Date().toISOString() : null;
+  // 同意チェック未完了なら送信しない
+  if (!document.getElementById('consent-check')?.checked) {
+    showToast('参加規約への同意が必要です');
+    return;
+  }
+  const consentedAt = new Date().toISOString();
   state.submitting = true;
 
   const btn = document.getElementById('confirm-btn');
