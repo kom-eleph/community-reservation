@@ -69,6 +69,7 @@ model Reservation {
   hasAllergy      Boolean?
   carbonatedNg    Boolean?
   allergyNote     String?
+  consentedAt     DateTime?
   user            User     @relation(fields: [lineUserId], references: [lineUserId])
   schedule        Schedule @relation(fields: [scheduleId], references: [id])
   createdAt       DateTime @default(now())
