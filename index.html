@@ -437,6 +437,13 @@
     <div class="card">
       <h2>予約内容を確認してください</h2>
       <div class="confirm-box" id="confirm-detail"></div>
+      <!-- 同意チェックボックス -->
+      <div id="consent-block" style="margin:16px 0 12px;padding:14px;background:var(--color-background-secondary,#f9fafb);border-radius:10px;">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;color:var(--color-text-primary,#111827);line-height:1.6;">
+          <input type="checkbox" id="consent-check" style="width:18px;height:18px;margin-top:2px;flex-shrink:0;cursor:pointer;" onchange="updateConsentBtn()">
+          <span><a href="#" onclick="openConsentModal(event)" style="color:#0ea5e9;text-decoration:underline;">参加規約</a>に同意する</span>
+        </label>
+      </div>
       <button class="btn-green" id="confirm-btn" onclick="submitReservation()">この内容で予約する</button>
       <button class="btn-gray"  onclick="showScreen('attendee')">戻る</button>
     </div>
@@ -526,6 +533,52 @@
       <div class="done-info" id="inq-done-info"></div>
       <div class="done-nav">確認後、このLINEのトークで回答します</div>
       <button class="btn-green" onclick="safeClose()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 参加規約モーダル ── -->
+<div id="modal-consent" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-consent-title" style="align-items:flex-end;" onclick="closeConsentModal(event)">
+  <div class="modal-box" style="max-height:85vh;display:flex;flex-direction:column;border-radius:16px 16px 0 0;margin:0;width:100%;max-width:560px;" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 0 12px;border-bottom:1px solid #f3f4f6;flex-shrink:0;">
+      <div class="modal-title" id="modal-consent-title" style="margin:0;">参加規約</div>
+      <button onclick="closeConsentModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9ca3af;padding:4px;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;padding:16px 0;font-size:13px;line-height:1.8;color:var(--color-text-primary,#111827);">
+      <p style="margin:0 0 12px;">1 day Xは、いつもと少しだけ違う一日をつくるための場です。ここで出会った人や、交わされた言葉、その場の空気を、安心して持ち帰れるよう、参加者の皆さんにお願いがあります。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第1条（目的）</p>
+      <p style="margin:0 0 12px;">本規約は、1 day X（以下「本イベント」）への参加にあたり、参加者が遵守すべき事項を定めるものです。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第2条（撮影・録音）</p>
+      <p style="margin:0 0 12px;">参加者は、他の参加者・スタッフが映り込む撮影・録音を行う場合、事前に対象者の明示的な同意を得るものとします。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第3条（SNS・外部発信の禁止事項）</p>
+      <p style="margin:0 0 6px;">参加者は、以下の行為を行わないものとします。</p>
+      <p style="margin:0 0 4px;">（1）他の参加者の氏名・顔・発言・連絡先等の個人情報を、本人の同意なくSNSその他公開の場に投稿する行為</p>
+      <p style="margin:0 0 4px;">（2）本イベント、運営者、参加者に対する名誉毀損・侮辱・業務妨害に該当する投稿・発言</p>
+      <p style="margin:0 0 12px;">（3）事実と異なる情報を流布し、運営者または参加者の社会的評価を低下させる行為</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第4条（違反時の対応）</p>
+      <p style="margin:0 0 6px;">前条に違反した場合、運営者は以下の対応をとることができます。</p>
+      <p style="margin:0 0 4px;">（1）当該投稿・発言の削除要請</p>
+      <p style="margin:0 0 4px;">（2）以降の参加をお断りする措置</p>
+      <p style="margin:0 0 12px;">（3）損害賠償その他の法的措置</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第5条（個人情報の取り扱い）</p>
+      <p style="margin:0 0 12px;">ご登録いただいた情報（お名前・LINE情報）は、本イベントの運営目的にのみ使用し、第三者に提供しません。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第6条（同意の記録）</p>
+      <p style="margin:0 0 12px;">本規約への同意は、参加予約のたびに電子的に記録されます。同意日時・参加者識別情報は運営者が保管します。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第7条（準拠法・管轄）</p>
+      <p style="margin:0 0 12px;">本規約は日本法に準拠し、千葉地方裁判所を第一審の専属的合意管轄裁判所とします。</p>
+
+      <p style="font-weight:500;margin:16px 0 6px;">第8条（規約の変更）</p>
+      <p style="margin:0 0 12px;">本規約を変更する場合は、LINEまたはサイト上で事前に告知します。変更後の規約は、告知後に行われた予約から適用されます。</p>
+    </div>
+    <div style="padding:12px 0 0;border-top:1px solid #f3f4f6;flex-shrink:0;">
+      <button class="btn-green" onclick="agreeConsent()" style="width:100%;">同意して戻る</button>
     </div>
   </div>
 </div>
@@ -1020,6 +1073,10 @@ function updateRefreshLabel() {
 
 // ── 予約確認画面 ──────────────────────────────────────────
 function showConfirm(sched) {
+  // 確認画面が表示されるたびに同意チェックをリセット
+  const cb = document.getElementById('consent-check');
+  if (cb) cb.checked = false;
+
   state.selectedSched = sched;
   const info = state.userInfo || {};
 
@@ -1068,8 +1125,28 @@ function showConfirm(sched) {
 }
 
 // ── 予約送信（二重送信防止） ──────────────────────────────
+/* ── 参加規約モーダル ─────────────────────────────────── */
+function openConsentModal(e) {
+  if (e) e.preventDefault();
+  document.getElementById('modal-consent').style.display = 'flex';
+}
+function closeConsentModal(e) {
+  if (e && e.target !== document.getElementById('modal-consent')) return;
+  document.getElementById('modal-consent').style.display = 'none';
+}
+function agreeConsent() {
+  document.getElementById('modal-consent').style.display = 'none';
+  const cb = document.getElementById('consent-check');
+  if (cb) { cb.checked = true; updateConsentBtn(); }
+}
+function updateConsentBtn() {
+  // チェック状態の見た目のみ更新（ボタンは常に有効）
+}
+
 async function submitReservation() {
   if (state.submitting) return;
+  const consentedAt = document.getElementById('consent-check')?.checked
+    ? new Date().toISOString() : null;
   state.submitting = true;
 
   const btn = document.getElementById('confirm-btn');
@@ -1096,6 +1173,7 @@ async function submitReservation() {
           hasAllergy:  info.hasAllergy === 'yes' ? true : info.hasAllergy === 'no' ? false : null,
           carbonatedNg: info.carbonatedNg === 'yes' ? true : info.carbonatedNg === 'no' ? false : null,
           allergyNote: info.allergyNote || null,
+          consentedAt: consentedAt,
           liffToken:   state.liffAccessToken,
         }),
       });
@@ -1112,6 +1190,7 @@ async function submitReservation() {
           hasAllergy:  info.hasAllergy === 'yes' ? true : info.hasAllergy === 'no' ? false : null,
           carbonatedNg: info.carbonatedNg === 'yes' ? true : info.carbonatedNg === 'no' ? false : null,
           allergyNote: info.allergyNote || null,
+          consentedAt: consentedAt,
           liffToken:   state.liffAccessToken,
         }),
       });

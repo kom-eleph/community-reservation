@@ -324,7 +324,7 @@ async function createScheduleId(tx) {
 
 app.post("/api/reservations", publicRateLimit, async (req, res, next) => {
   try {
-    const { userId, schedId, name, birthdate, gender, hasAllergy, carbonatedNg, allergyNote, liffToken } = req.body;
+    const { userId, schedId, name, birthdate, gender, hasAllergy, carbonatedNg, allergyNote, consentedAt, liffToken } = req.body;
 
     if (!userId || !schedId || !name) {
       return res.status(400).json({
@@ -420,6 +420,7 @@ app.post("/api/reservations", publicRateLimit, async (req, res, next) => {
           hasAllergy:   hasAllergy   ?? null,
           carbonatedNg: carbonatedNg ?? null,
           allergyNote:  allergyNote  || null,
+          consentedAt:  consentedAt ? new Date(consentedAt) : null,
         },
       });
 
@@ -584,7 +585,7 @@ app.post("/api/reservations/:reservationId/cancel", publicRateLimit, async (req,
 app.post("/api/reservations/:reservationId/change", publicRateLimit, async (req, res, next) => {
   try {
     const { reservationId } = req.params;
-    const { userId, newSchedId, name, birthdate, gender, hasAllergy, carbonatedNg, allergyNote, liffToken } = req.body;
+    const { userId, newSchedId, name, birthdate, gender, hasAllergy, carbonatedNg, allergyNote, consentedAt, liffToken } = req.body;
 
     if (!reservationId || !userId || !newSchedId || !name) {
       return res.status(400).json({
@@ -721,6 +722,7 @@ app.post("/api/reservations/:reservationId/change", publicRateLimit, async (req,
           hasAllergy:   hasAllergy   ?? null,
           carbonatedNg: carbonatedNg ?? null,
           allergyNote:  allergyNote  || null,
+          consentedAt:  consentedAt ? new Date(consentedAt) : null,
         },
       });
 
@@ -1060,6 +1062,7 @@ app.get("/api/admin/reservations", adminRateLimit, requireAdminKey, async (req, 
         hasAllergy: r.hasAllergy,
         carbonatedNg: r.carbonatedNg,
         allergyNote: r.allergyNote || "",
+        consentedAt: r.consentedAt,
       })),
     });
   } catch (error) {
