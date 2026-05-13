@@ -1051,6 +1051,8 @@ app.get("/api/admin/reservations", adminRateLimit, requireAdminKey, async (req, 
         status: r.status,
         lineUserId: r.lineUserId,
         name: r.user?.name || "",
+        birthdate: r.user?.birthdate ? r.user.birthdate.toISOString().slice(0, 10) : null,
+        gender: r.user?.gender || null,
         eventName: r.schedule?.event?.name || "",
         eventId: r.schedule?.event?.id || "",
         scheduleId: r.scheduleId,
@@ -1271,10 +1273,18 @@ app.get("/api/admin/users", adminRateLimit, requireAdminKey, async (req, res, ne
       select: {
         lineUserId: true,
         name: true,
+        birthdate: true,
+        gender: true,
         registeredAt: true,
       },
     });
-    res.json({ status: "ok", users });
+    res.json({
+      status: "ok",
+      users: users.map((u) => ({
+        ...u,
+        birthdate: u.birthdate ? u.birthdate.toISOString().slice(0, 10) : null,
+      })),
+    });
   } catch (error) {
     next(error);
   }
