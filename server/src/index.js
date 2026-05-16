@@ -218,7 +218,7 @@ function buildSurveyFlexMessage(q1, q2, responseId) {
         layout: "vertical",
         paddingAll: "lg",
         contents: [
-          { type: "text", text: "参加後アンケート", size: "xs", color: "#888780", letterSpacing: "2px" },
+          { type: "text", text: "参加後アンケート", size: "xs", color: "#888780" },
         ],
       },
       body: {
