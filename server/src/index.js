@@ -148,6 +148,114 @@ async function pushLineMessage(lineUserId, text) {
   }
 }
 
+async function pushLineMessages(lineUserId, messages) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) {
+    console.warn("LINE_CHANNEL_ACCESS_TOKEN is not set. Skip push message.");
+    return;
+  }
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ to: lineUserId, messages }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    console.error("LINE push failed:", response.status, body);
+  }
+}
+
+async function replyLineMessages(replyToken, messages) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) return;
+  await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ replyToken, messages }),
+  });
+}
+
+function buildSurveyFlexMessage(q1, q2, responseId) {
+  const makeButtons = (q, qNum) =>
+    JSON.parse(q.options).map((opt) => ({
+      type: "button",
+      style: "secondary",
+      height: "sm",
+      action: {
+        type: "postback",
+        label: opt,
+        data: `survey_q=${qNum}&answer=${encodeURIComponent(opt)}&rid=${responseId}`,
+        displayText: opt,
+      },
+    }));
+
+  return {
+    type: "flex",
+    altText: "イベント参加のアンケートです。ぜひ回答してください。",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      header: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "lg",
+        contents: [
+          { type: "text", text: "参加後アンケート", size: "xs", color: "#888780", letterSpacing: "2px" },
+        ],
+      },
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "xl",
+        paddingAll: "lg",
+        contents: [
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+              { type: "text", text: "Q1", size: "xs", color: "#888780", weight: "bold" },
+              { type: "text", text: q1.body, wrap: true, size: "sm", color: "#1a1714" },
+              ...makeButtons(q1, 1),
+            ],
+          },
+          { type: "separator" },
+          {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            contents: [
+              { type: "text", text: "Q2", size: "xs", color: "#888780", weight: "bold" },
+              { type: "text", text: q2.body, wrap: true, size: "sm", color: "#1a1714" },
+              ...makeButtons(q2, 2),
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: "box",
+        layout: "vertical",
+        paddingAll: "md",
+        contents: [
+          {
+            type: "text",
+            text: "回答は任意です。自由記述があれば回答後にテキストで送ってください。",
+            wrap: true,
+            size: "xxs",
+            color: "#888780",
+          },
+        ],
+      },
+    },
+  };
+}
+
 function formatScheduleText(schedule) {
   return [
     schedule.event.name,
@@ -947,8 +1055,14 @@ app.post("/api/webhook/line", async (req, res) => {
     ];
 
     for (const ev of events) {
-      // postback イベントはすべて無視（リッチメニューのアクション）
-      if (ev.type === "postback") continue;
+      // postback: アンケート回答のみ処理、それ以外はリッチメニュー由来として無視
+      if (ev.type === "postback") {
+        const data = ev.postback?.data || "";
+        if (data.startsWith("survey_")) {
+          await handleSurveyPostback(ev);
+        }
+        continue;
+      }
 
       if (ev.type === "message" && ev.message?.type === "text") {
         const text = (ev.message.text || "").trim();
@@ -958,6 +1072,13 @@ app.post("/api/webhook/line", async (req, res) => {
           text.toLowerCase() === kw.toLowerCase()
         );
         if (isIgnored) continue;
+
+        // アンケートの自由記述として処理できるか試みる
+        const lineUserId = ev.source?.userId;
+        if (lineUserId) {
+          const surveyHandled = await handleSurveyFreeText(lineUserId, text, ev.replyToken);
+          if (surveyHandled) continue;
+        }
 
         const replyToken = ev.replyToken;
 
@@ -1338,6 +1459,200 @@ app.use((error, req, res, next) => {
     status: "error",
     message: "Internal server error",
   });
+});
+
+// ── アンケート：postback 処理 ────────────────────────────
+async function handleSurveyPostback(ev) {
+  const data = ev.postback?.data || "";
+  const params = new URLSearchParams(data);
+  const qNum = parseInt(params.get("survey_q"), 10);
+  const answer = params.get("answer") || "";
+  const rid = parseInt(params.get("rid"), 10);
+  const replyToken = ev.replyToken;
+
+  if (!rid || !qNum) return;
+
+  try {
+    const sr = await prisma.surveyResponse.findUnique({ where: { id: rid } });
+    if (!sr) return;
+
+    if (qNum === 1 && sr.currentStep === 1) {
+      await prisma.surveyResponse.update({
+        where: { id: rid },
+        data: { answer1: answer, currentStep: 2 },
+      });
+      await replyLineMessages(replyToken, [
+        { type: "text", text: "Q1 ありがとうございます。\nQ2 も回答いただけると嬉しいです。\n自由記述があればそのまま返信してください（任意）。" },
+      ]);
+    } else if (qNum === 2 && sr.currentStep === 2) {
+      await prisma.surveyResponse.update({
+        where: { id: rid },
+        data: { answer2: answer, currentStep: 3, completedAt: new Date() },
+      });
+      await replyLineMessages(replyToken, [
+        { type: "text", text: "回答ありがとうございました。\n自由記述があればそのまま返信してください（任意）。" },
+      ]);
+    }
+  } catch (e) {
+    console.error("handleSurveyPostback error:", e);
+  }
+}
+
+// ── アンケート：自由記述テキスト処理 ─────────────────────
+async function handleSurveyFreeText(lineUserId, text, replyToken) {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sr = await prisma.surveyResponse.findFirst({
+    where: {
+      lineUserId,
+      currentStep: { gte: 2 },
+      sentAt: { gte: cutoff },
+    },
+    orderBy: { sentAt: "desc" },
+  });
+  if (!sr) return false;
+
+  if (sr.currentStep === 2 && !sr.free1) {
+    await prisma.surveyResponse.update({
+      where: { id: sr.id },
+      data: { free1: text },
+    });
+  } else if (sr.currentStep >= 3 && !sr.free2) {
+    await prisma.surveyResponse.update({
+      where: { id: sr.id },
+      data: { free2: text },
+    });
+    await replyLineMessages(replyToken, [
+      { type: "text", text: "ありがとうございます。大切に読みます。" },
+    ]);
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// ── 管理者API: 質問一覧取得 ──────────────────────────────
+app.get("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const questions = await prisma.surveyQuestion.findMany({
+      orderBy: [{ module: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
+    });
+    res.json({ status: "ok", questions });
+  } catch (e) { next(e); }
+});
+
+// ── 管理者API: 質問追加 ──────────────────────────────────
+app.post("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const { module, body, options, hasFree, sortOrder } = req.body;
+    if (!module || !body || !options || !Array.isArray(JSON.parse(options))) {
+      return res.status(400).json({ status: "error", message: "module・body・optionsは必須です" });
+    }
+    const q = await prisma.surveyQuestion.create({
+      data: {
+        module,
+        body,
+        options,
+        hasFree: hasFree !== false,
+        sortOrder: sortOrder || 0,
+      },
+    });
+    res.json({ status: "ok", question: q });
+  } catch (e) { next(e); }
+});
+
+// ── 管理者API: 質問編集 ──────────────────────────────────
+app.patch("/api/admin/survey/questions/:id", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { module, body, options, hasFree, isActive, sortOrder } = req.body;
+    const data = {};
+    if (module !== undefined) data.module = module;
+    if (body !== undefined) data.body = body;
+    if (options !== undefined) data.options = options;
+    if (hasFree !== undefined) data.hasFree = hasFree;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (sortOrder !== undefined) data.sortOrder = sortOrder;
+    const q = await prisma.surveyQuestion.update({ where: { id }, data });
+    res.json({ status: "ok", question: q });
+  } catch (e) { next(e); }
+});
+
+// ── 管理者API: アンケート送信 ────────────────────────────
+app.post("/api/admin/survey/send", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const { scheduleId, module, lineUserIds } = req.body;
+    if (!scheduleId || !module || !Array.isArray(lineUserIds) || lineUserIds.length === 0) {
+      return res.status(400).json({ status: "error", message: "scheduleId・module・lineUserIdsは必須です" });
+    }
+
+    const activeQuestions = await prisma.surveyQuestion.findMany({
+      where: { module, isActive: true },
+    });
+    if (activeQuestions.length < 2) {
+      return res.status(400).json({ status: "error", message: `${module} の有効な質問が2問以上必要です` });
+    }
+
+    // Fisher-Yates でシャッフル後に先頭2問選出（ユーザーごとに同じ2問を送る）
+    const shuffled = [...activeQuestions].sort(() => Math.random() - 0.5);
+    const [q1, q2] = shuffled;
+
+    let successCount = 0;
+    const errors = [];
+
+    for (const lineUserId of lineUserIds) {
+      try {
+        const sr = await prisma.surveyResponse.create({
+          data: { lineUserId, scheduleId, questionId1: q1.id, questionId2: q2.id },
+        });
+        const flex = buildSurveyFlexMessage(q1, q2, sr.id);
+        await pushLineMessages(lineUserId, [flex]);
+        successCount++;
+      } catch (e) {
+        console.error(`Survey send failed for ${lineUserId}:`, e);
+        errors.push(lineUserId);
+      }
+    }
+
+    res.json({ status: "ok", successCount, errors });
+  } catch (e) { next(e); }
+});
+
+// ── 管理者API: 回答一覧 ──────────────────────────────────
+app.get("/api/admin/survey/responses", adminRateLimit, requireAdminKey, async (req, res, next) => {
+  try {
+    const { scheduleId } = req.query;
+    const where = scheduleId ? { scheduleId } : {};
+    const responses = await prisma.surveyResponse.findMany({
+      where,
+      orderBy: { sentAt: "desc" },
+      take: 500,
+    });
+
+    const qIds = [...new Set([
+      ...responses.map(r => r.questionId1),
+      ...responses.map(r => r.questionId2),
+    ])];
+    const questions = await prisma.surveyQuestion.findMany({ where: { id: { in: qIds } } });
+    const qMap = Object.fromEntries(questions.map(q => [q.id, q.body]));
+
+    res.json({
+      status: "ok",
+      responses: responses.map(r => ({
+        id: r.id,
+        lineUserId: r.lineUserId,
+        scheduleId: r.scheduleId,
+        q1: qMap[r.questionId1] || "",
+        q2: qMap[r.questionId2] || "",
+        answer1: r.answer1,
+        answer2: r.answer2,
+        free1: r.free1,
+        free2: r.free2,
+        currentStep: r.currentStep,
+        sentAt: r.sentAt,
+        completedAt: r.completedAt,
+      })),
+    });
+  } catch (e) { next(e); }
 });
 
 const port = process.env.PORT || 3000;

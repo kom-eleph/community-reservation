@@ -129,3 +129,39 @@ model Inquiry {
   @@index([status])
   @@map("inquiries")
 }
+
+model SurveyQuestion {
+  id        Int      @id @default(autoincrement())
+  module    String
+  body      String
+  options   String
+  hasFree   Boolean  @default(true)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([module])
+  @@index([isActive])
+  @@map("survey_questions")
+}
+
+model SurveyResponse {
+  id           Int       @id @default(autoincrement())
+  lineUserId   String
+  scheduleId   String
+  questionId1  Int
+  questionId2  Int
+  answer1      String?
+  answer2      String?
+  free1        String?
+  free2        String?
+  currentStep  Int       @default(1)
+  sentAt       DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([lineUserId])
+  @@index([scheduleId])
+  @@index([currentStep])
+  @@map("survey_responses")
+}
