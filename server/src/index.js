@@ -182,18 +182,30 @@ async function replyLineMessages(replyToken, messages) {
 }
 
 function buildSurveyFlexMessage(q1, q2, responseId) {
-  const makeButtons = (q, qNum) =>
-    JSON.parse(q.options).map((opt) => ({
-      type: "button",
-      style: "secondary",
-      height: "sm",
-      action: {
-        type: "postback",
-        label: opt,
-        data: `survey_q=${qNum}&answer=${encodeURIComponent(opt)}&rid=${responseId}`,
-        displayText: opt,
-      },
-    }));
+  const makeContents = (q, qNum) => {
+    const opts = JSON.parse(q.options || "[]");
+    const isFreeOnly = opts.length === 0;
+    const base = [
+      { type: "text", text: `Q${qNum}`, size: "xs", color: "#888780", weight: "bold" },
+      { type: "text", text: q.body, wrap: true, size: "sm", color: "#1a1714" },
+    ];
+    if (isFreeOnly) {
+      base.push({ type: "text", text: "↩ このトークに直接返信してください", size: "xxs", color: "#888780", wrap: true });
+    } else {
+      base.push(...opts.map((opt) => ({
+        type: "button",
+        style: "secondary",
+        height: "sm",
+        action: {
+          type: "postback",
+          label: opt,
+          data: `survey_q=${qNum}&answer=${encodeURIComponent(opt)}&rid=${responseId}`,
+          displayText: opt,
+        },
+      })));
+    }
+    return base;
+  };
 
   return {
     type: "flex",
@@ -219,22 +231,14 @@ function buildSurveyFlexMessage(q1, q2, responseId) {
             type: "box",
             layout: "vertical",
             spacing: "md",
-            contents: [
-              { type: "text", text: "Q1", size: "xs", color: "#888780", weight: "bold" },
-              { type: "text", text: q1.body, wrap: true, size: "sm", color: "#1a1714" },
-              ...makeButtons(q1, 1),
-            ],
+            contents: makeContents(q1, 1),
           },
           { type: "separator" },
           {
             type: "box",
             layout: "vertical",
             spacing: "md",
-            contents: [
-              { type: "text", text: "Q2", size: "xs", color: "#888780", weight: "bold" },
-              { type: "text", text: q2.body, wrap: true, size: "sm", color: "#1a1714" },
-              ...makeButtons(q2, 2),
-            ],
+            contents: makeContents(q2, 2),
           },
         ],
       },
@@ -1488,14 +1492,25 @@ async function handleSurveyFreeText(lineUserId, text, replyToken) {
   const sr = await prisma.surveyResponse.findFirst({
     where: {
       lineUserId,
-      currentStep: { gte: 2 },
+      currentStep: { gte: 1 },
       sentAt: { gte: cutoff },
+      completedAt: null,
     },
     orderBy: { sentAt: "desc" },
   });
   if (!sr) return false;
 
-  if (sr.currentStep === 2 && !sr.free1) {
+  // Q1が自由記述のみ（選択肢なし）の場合はstep1からテキストを受け取る
+  const q1 = await prisma.surveyQuestion.findUnique({ where: { id: sr.questionId1 } });
+  const q1IsFreeOnly = q1 && JSON.parse(q1.options || "[]").length === 0;
+
+  if (sr.currentStep === 1 && q1IsFreeOnly && !sr.free1) {
+    await prisma.surveyResponse.update({
+      where: { id: sr.id },
+      data: { free1: text, answer1: "(自由記述)", currentStep: 2 },
+    });
+    return true;
+  } else if (sr.currentStep === 2 && !sr.free1) {
     await prisma.surveyResponse.update({
       where: { id: sr.id },
       data: { free1: text },
