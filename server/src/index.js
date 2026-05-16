@@ -1445,22 +1445,6 @@ app.get("/api/admin/waitlists", adminRateLimit, requireAdminKey, async (req, res
   }
 });
 
-app.use((req, res) => {
-  res.status(404).json({
-    status: "error",
-    message: "Not found",
-  });
-});
-
-app.use((error, req, res, next) => {
-  console.error(error);
-
-  res.status(500).json({
-    status: "error",
-    message: "Internal server error",
-  });
-});
-
 // ── アンケート：postback 処理 ────────────────────────────
 async function handleSurveyPostback(ev) {
   const data = ev.postback?.data || "";
@@ -1653,6 +1637,23 @@ app.get("/api/admin/survey/responses", adminRateLimit, requireAdminKey, async (r
       })),
     });
   } catch (e) { next(e); }
+});
+
+
+app.use((req, res) => {
+  res.status(404).json({
+    status: "error",
+    message: "Not found",
+  });
+});
+
+app.use((error, req, res, next) => {
+  console.error(error);
+
+  res.status(500).json({
+    status: "error",
+    message: "Internal server error",
+  });
 });
 
 const port = process.env.PORT || 3000;
