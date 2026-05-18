@@ -182,77 +182,52 @@ async function replyLineMessages(replyToken, messages) {
 }
 
 function buildSurveyFlexMessage(q1, q2, responseId) {
-  const makeContents = (q, qNum) => {
-    const opts = JSON.parse(q.options || "[]");
-    const isFreeOnly = opts.length === 0;
-    const base = [
-      { type: "text", text: `Q${qNum}`, size: "xs", color: "#888780", weight: "bold" },
-      { type: "text", text: q.body, wrap: true, size: "sm", color: "#1a1714" },
-    ];
-    if (isFreeOnly) {
-      base.push({ type: "text", text: "↩ このトークに直接返信してください", size: "xxs", color: "#888780", wrap: true });
-    } else {
-      base.push(...opts.map((opt) => ({
-        type: "button",
-        style: "secondary",
-        height: "sm",
-        action: {
-          type: "postback",
-          label: opt,
-          data: `survey_q=${qNum}&answer=${encodeURIComponent(opt)}&rid=${responseId}`,
-          displayText: opt,
-        },
-      })));
-    }
-    return base;
-  };
+  const surveyUrl = process.env.LIFF_SURVEY_URL || "";
 
   return {
     type: "flex",
-    altText: "イベント参加のアンケートです。ぜひ回答してください。",
+    altText: "参加後アンケートです。よければ回答してください。",
     contents: {
       type: "bubble",
-      size: "mega",
-      header: {
-        type: "box",
-        layout: "vertical",
-        paddingAll: "lg",
-        contents: [
-          { type: "text", text: "参加後アンケート", size: "xs", color: "#888780" },
-        ],
-      },
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "xl",
-        paddingAll: "lg",
+        spacing: "md",
+        paddingAll: "xl",
         contents: [
+          { type: "text", text: "参加後アンケート", size: "xs", color: "#888780" },
           {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: makeContents(q1, 1),
-          },
-          { type: "separator" },
-          {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            contents: makeContents(q2, 2),
+            type: "text",
+            text: "今夜のことを\n少しだけ教えてください。",
+            wrap: true,
+            size: "md",
+            color: "#1a1714",
+            margin: "sm",
           },
         ],
       },
       footer: {
         type: "box",
         layout: "vertical",
-        paddingAll: "md",
+        paddingAll: "lg",
         contents: [
           {
+            type: "button",
+            style: "primary",
+            color: "#1a1714",
+            action: {
+              type: "uri",
+              label: "アンケートに答える",
+              uri: `${surveyUrl}?rid=${responseId}`,
+            },
+          },
+          {
             type: "text",
-            text: "回答は任意です。自由記述があれば回答後にテキストで送ってください。",
-            wrap: true,
+            text: "回答は任意です",
             size: "xxs",
             color: "#888780",
+            align: "center",
+            margin: "sm",
           },
         ],
       },
@@ -1077,13 +1052,6 @@ app.post("/api/webhook/line", async (req, res) => {
         );
         if (isIgnored) continue;
 
-        // アンケートの自由記述として処理できるか試みる
-        const lineUserId = ev.source?.userId;
-        if (lineUserId) {
-          const surveyHandled = await handleSurveyFreeText(lineUserId, text, ev.replyToken);
-          if (surveyHandled) continue;
-        }
-
         const replyToken = ev.replyToken;
 
         await fetch("https://api.line.me/v2/bot/message/reply", {
@@ -1487,47 +1455,66 @@ async function handleSurveyPostback(ev) {
 }
 
 // ── アンケート：自由記述テキスト処理 ─────────────────────
-async function handleSurveyFreeText(lineUserId, text, replyToken) {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const sr = await prisma.surveyResponse.findFirst({
-    where: {
-      lineUserId,
-      currentStep: { gte: 1 },
-      sentAt: { gte: cutoff },
-      completedAt: null,
-    },
-    orderBy: { sentAt: "desc" },
-  });
-  if (!sr) return false;
+// ── アンケート：LIFF経由の回答一括保存 ──────────────────
+// LIFF画面から Q1選択・Q2選択・自由記述をまとめて送信
+app.post("/api/survey/answer", async (req, res, next) => {
+  try {
+    const { rid, answer1, answer2, freeText, liffToken, userId } = req.body;
+    if (!rid || !liffToken || !userId) {
+      return res.status(400).json({ status: "error", message: "必須パラメータが不足しています" });
+    }
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証エラー" });
+    }
+    const responseId = parseInt(rid, 10);
+    const sr = await prisma.surveyResponse.findUnique({ where: { id: responseId } });
+    if (!sr) return res.status(404).json({ status: "error", message: "回答セッションが見つかりません" });
+    if (sr.lineUserId !== userId) {
+      return res.status(403).json({ status: "error", message: "権限がありません" });
+    }
+    await prisma.surveyResponse.update({
+      where: { id: responseId },
+      data: {
+        answer1: answer1 || null,
+        answer2: answer2 || null,
+        free1: freeText || null,
+        currentStep: 3,
+        completedAt: new Date(),
+      },
+    });
+    res.json({ status: "ok" });
+  } catch (e) { next(e); }
+});
 
-  // Q1が自由記述のみ（選択肢なし）の場合はstep1からテキストを受け取る
-  const q1 = await prisma.surveyQuestion.findUnique({ where: { id: sr.questionId1 } });
-  const q1IsFreeOnly = q1 && JSON.parse(q1.options || "[]").length === 0;
-
-  if (sr.currentStep === 1 && q1IsFreeOnly && !sr.free1) {
-    await prisma.surveyResponse.update({
-      where: { id: sr.id },
-      data: { free1: text, answer1: "(自由記述)", currentStep: 2 },
-    });
-    return true;
-  } else if (sr.currentStep === 2 && !sr.free1) {
-    await prisma.surveyResponse.update({
-      where: { id: sr.id },
-      data: { free1: text },
-    });
-  } else if (sr.currentStep >= 3 && !sr.free2) {
-    await prisma.surveyResponse.update({
-      where: { id: sr.id },
-      data: { free2: text },
-    });
-    await replyLineMessages(replyToken, [
-      { type: "text", text: "ありがとうございます。大切に読みます。" },
+// ── アンケート：回答内容の取得（LIFF初期表示用）───────────
+// 質問文・選択肢をLIFF画面に渡す
+app.get("/api/survey/questions/:rid", async (req, res, next) => {
+  try {
+    const rid = parseInt(req.params.rid, 10);
+    const liffToken = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+    const userId = req.query.userId;
+    if (!liffToken || !userId) {
+      return res.status(401).json({ status: "error", message: "認証情報が不足しています" });
+    }
+    if (!await verifyLiffToken(liffToken, userId)) {
+      return res.status(401).json({ status: "error", message: "認証エラー" });
+    }
+    const sr = await prisma.surveyResponse.findUnique({ where: { id: rid } });
+    if (!sr || sr.lineUserId !== userId) {
+      return res.status(404).json({ status: "error", message: "見つかりません" });
+    }
+    const [q1, q2] = await Promise.all([
+      prisma.surveyQuestion.findUnique({ where: { id: sr.questionId1 } }),
+      prisma.surveyQuestion.findUnique({ where: { id: sr.questionId2 } }),
     ]);
-  } else {
-    return false;
-  }
-  return true;
-}
+    res.json({
+      status: "ok",
+      alreadyAnswered: sr.currentStep >= 3,
+      q1: q1 ? { id: q1.id, body: q1.body, options: JSON.parse(q1.options || "[]"), hasFree: q1.hasFree } : null,
+      q2: q2 ? { id: q2.id, body: q2.body, options: JSON.parse(q2.options || "[]"), hasFree: q2.hasFree } : null,
+    });
+  } catch (e) { next(e); }
+});
 
 // ── 管理者API: 質問一覧取得 ──────────────────────────────
 app.get("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
