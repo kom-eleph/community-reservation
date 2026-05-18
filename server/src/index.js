@@ -218,7 +218,7 @@ function buildSurveyFlexMessage(q1, q2, responseId) {
             action: {
               type: "uri",
               label: "アンケートに答える",
-              uri: `${surveyUrl}?rid=${responseId}`,
+              uri: `${surveyUrl}?rid=${responseId}#rid=${responseId}`,
             },
           },
           {
