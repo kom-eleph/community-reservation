@@ -1635,21 +1635,45 @@ app.get("/api/admin/survey/responses", adminRateLimit, requireAdminKey, async (r
       take: 500,
     });
 
+    // 質問文マップ
     const qIds = [...new Set([
       ...responses.map(r => r.questionId1),
       ...responses.map(r => r.questionId2),
     ])];
     const questions = await prisma.surveyQuestion.findMany({ where: { id: { in: qIds } } });
-    const qMap = Object.fromEntries(questions.map(q => [q.id, q.body]));
+    const qMap = Object.fromEntries(questions.map(q => [q.id, { body: q.body, pattern: q.pattern, qIndex: q.qIndex }]));
+
+    // ユーザー名マップ（lineUserId → name）
+    const userIds = [...new Set(responses.map(r => r.lineUserId))];
+    const users = await prisma.user.findMany({
+      where: { lineUserId: { in: userIds } },
+      select: { lineUserId: true, name: true },
+    });
+    const userMap = Object.fromEntries(users.map(u => [u.lineUserId, u.name || null]));
+
+    // scheduleIdから日程情報マップ
+    const scheduleIds = [...new Set(responses.map(r => r.scheduleId))];
+    const schedules = await prisma.schedule.findMany({
+      where: { id: { in: scheduleIds } },
+      include: { event: { select: { name: true } } },
+    });
+    const schedMap = Object.fromEntries(schedules.map(s => [s.id, {
+      datetime: s.startsAt ? new Date(s.startsAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }) : "",
+      eventName: s.event?.name || "",
+    }]));
 
     res.json({
       status: "ok",
       responses: responses.map(r => ({
         id: r.id,
         lineUserId: r.lineUserId,
+        userName: userMap[r.lineUserId] || null,
         scheduleId: r.scheduleId,
-        q1: qMap[r.questionId1] || "",
-        q2: qMap[r.questionId2] || "",
+        eventName: schedMap[r.scheduleId]?.eventName || "",
+        datetime: schedMap[r.scheduleId]?.datetime || "",
+        q1: qMap[r.questionId1]?.body || "",
+        q2: qMap[r.questionId2]?.body || "",
+        pattern: qMap[r.questionId1]?.pattern || "",
         answer1: r.answer1,
         answer2: r.answer2,
         free1: r.free1,
