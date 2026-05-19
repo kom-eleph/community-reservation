@@ -1520,7 +1520,7 @@ app.get("/api/survey/questions/:rid", async (req, res, next) => {
 app.get("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
     const questions = await prisma.surveyQuestion.findMany({
-      orderBy: [{ module: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
+      orderBy: [{ module: "asc" }, { pattern: "asc" }, { qIndex: "asc" }, { id: "asc" }],
     });
     res.json({ status: "ok", questions });
   } catch (e) { next(e); }
@@ -1571,22 +1571,39 @@ app.post("/api/admin/survey/send", adminRateLimit, requireAdminKey, async (req, 
       return res.status(400).json({ status: "error", message: "scheduleId・module・lineUserIdsは必須です" });
     }
 
-    const activeQuestions = await prisma.surveyQuestion.findMany({
+    // ── パターン別に質問を取得 ──────────────────────────────
+    // pattern(A/B/C) × qIndex(1/2) の構造でグループ化
+    const allQuestions = await prisma.surveyQuestion.findMany({
       where: { module, isActive: true },
+      orderBy: [{ pattern: "asc" }, { qIndex: "asc" }],
     });
-    if (activeQuestions.length < 2) {
-      return res.status(400).json({ status: "error", message: `${module} の有効な質問が2問以上必要です` });
-    }
 
-    // Fisher-Yates でシャッフル後に先頭2問選出（ユーザーごとに同じ2問を送る）
-    const shuffled = [...activeQuestions].sort(() => Math.random() - 0.5);
-    const [q1, q2] = shuffled;
+    // パターンごとに { q1, q2 } セットを構築
+    const patternMap = {};
+    for (const q of allQuestions) {
+      const p = q.pattern || "A";
+      if (!patternMap[p]) patternMap[p] = {};
+      if (q.qIndex === 1) patternMap[p].q1 = q;
+      if (q.qIndex === 2) patternMap[p].q2 = q;
+    }
+    // Q1・Q2 両方揃っているパターンのみ有効とする
+    const validPatterns = Object.entries(patternMap)
+      .filter(([, v]) => v.q1 && v.q2)
+      .map(([k, v]) => ({ pattern: k, q1: v.q1, q2: v.q2 }));
+
+    if (validPatterns.length === 0) {
+      return res.status(400).json({ status: "error", message: `${module} の有効なパターンが1つもありません（各パターンにQ1・Q2が必要です）` });
+    }
 
     let successCount = 0;
     const errors = [];
 
     for (const lineUserId of lineUserIds) {
       try {
+        // ユーザーごとにランダムでパターンを選択
+        const chosen = validPatterns[Math.floor(Math.random() * validPatterns.length)];
+        const { q1, q2 } = chosen;
+
         const sr = await prisma.surveyResponse.create({
           data: { lineUserId, scheduleId, questionId1: q1.id, questionId2: q2.id },
         });

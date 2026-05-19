@@ -133,6 +133,8 @@ model Inquiry {
 model SurveyQuestion {
   id        Int      @id @default(autoincrement())
   module    String
+  pattern   String   @default("A")
+  qIndex    Int      @default(1)
   body      String
   options   String
   hasFree   Boolean  @default(true)
@@ -143,6 +145,7 @@ model SurveyQuestion {
 
   @@index([module])
   @@index([isActive])
+  @@index([module, pattern])
   @@map("survey_questions")
 }
 
