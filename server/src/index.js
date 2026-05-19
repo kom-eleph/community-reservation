@@ -1520,7 +1520,7 @@ app.get("/api/survey/questions/:rid", async (req, res, next) => {
 app.get("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
     const questions = await prisma.surveyQuestion.findMany({
-      orderBy: [{ module: "asc" }, { pattern: "asc" }, { qIndex: "asc" }, { id: "asc" }],
+      orderBy: [{ module: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
     });
     res.json({ status: "ok", questions });
   } catch (e) { next(e); }
@@ -1529,13 +1529,15 @@ app.get("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (r
 // ── 管理者API: 質問追加 ──────────────────────────────────
 app.post("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
-    const { module, body, options, hasFree, sortOrder } = req.body;
+    const { module, pattern, qIndex, body, options, hasFree, sortOrder } = req.body;
     if (!module || !body || !options || !Array.isArray(JSON.parse(options))) {
       return res.status(400).json({ status: "error", message: "module・body・optionsは必須です" });
     }
     const q = await prisma.surveyQuestion.create({
       data: {
         module,
+        pattern: pattern ?? "A",
+        qIndex: qIndex ?? 1,
         body,
         options,
         hasFree: hasFree !== false,
@@ -1550,12 +1552,14 @@ app.post("/api/admin/survey/questions", adminRateLimit, requireAdminKey, async (
 app.patch("/api/admin/survey/questions/:id", adminRateLimit, requireAdminKey, async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { module, body, options, hasFree, isActive, sortOrder } = req.body;
+    const { module, pattern, qIndex, body, options, hasFree, isActive, sortOrder } = req.body;
     const data = {};
-    if (module !== undefined) data.module = module;
-    if (body !== undefined) data.body = body;
-    if (options !== undefined) data.options = options;
-    if (hasFree !== undefined) data.hasFree = hasFree;
+    if (module   !== undefined) data.module   = module;
+    if (pattern  !== undefined) data.pattern  = pattern;
+    if (qIndex   !== undefined) data.qIndex   = qIndex;
+    if (body     !== undefined) data.body     = body;
+    if (options  !== undefined) data.options  = options;
+    if (hasFree  !== undefined) data.hasFree  = hasFree;
     if (isActive !== undefined) data.isActive = isActive;
     if (sortOrder !== undefined) data.sortOrder = sortOrder;
     const q = await prisma.surveyQuestion.update({ where: { id }, data });
@@ -1575,7 +1579,7 @@ app.post("/api/admin/survey/send", adminRateLimit, requireAdminKey, async (req, 
     // pattern(A/B/C) × qIndex(1/2) の構造でグループ化
     const allQuestions = await prisma.surveyQuestion.findMany({
       where: { module, isActive: true },
-      orderBy: [{ pattern: "asc" }, { qIndex: "asc" }],
+      orderBy: [{ module: "asc" }, { sortOrder: "asc" }, { id: "asc" }],
     });
 
     // パターンごとに { q1, q2 } セットを構築
