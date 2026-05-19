@@ -198,7 +198,7 @@ function buildSurveyFlexMessage(q1, q2, responseId) {
           { type: "text", text: "参加後アンケート", size: "xs", color: "#888780" },
           {
             type: "text",
-            text: "今夜のことを\n少しだけ教えてください。",
+            text: "今日のことを\n少しだけ教えてください。",
             wrap: true,
             size: "md",
             color: "#1a1714",
@@ -214,7 +214,7 @@ function buildSurveyFlexMessage(q1, q2, responseId) {
           {
             type: "button",
             style: "primary",
-            color: "#1a1714",
+            color: "#00A5BF",
             action: {
               type: "uri",
               label: "アンケートに答える",
